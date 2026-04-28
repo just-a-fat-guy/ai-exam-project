@@ -24,7 +24,7 @@ litellm>=1.71.0
 google-genai>=1.0.0  # For image generation with Imagen
 
 # Search & Research
-tavily-python>=0.7.12
+tavily-python>=0.7.24
 duckduckgo-search>=4.1.1
 arxiv>=2.0.0
 
