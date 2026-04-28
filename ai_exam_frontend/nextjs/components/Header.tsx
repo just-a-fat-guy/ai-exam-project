@@ -23,7 +23,7 @@ const Header = ({
         <a href="/" className="group flex items-center gap-3">
           <div className="apple-panel flex h-11 w-11 items-center justify-center rounded-2xl border-white/12 bg-white/[0.06] shadow-[0_12px_30px_rgba(0,0,0,0.28)]">
             <img
-              src="/img/gptr-logo.png"
+              src="/img/ai-exam-icon.svg"
               alt="logo"
               width={30}
               height={30}
@@ -32,10 +32,10 @@ const Header = ({
           </div>
           <div className="hidden sm:block">
             <div className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/45">
-              GPT Researcher
+              AI Exam
             </div>
             <div className="apple-heading-gradient text-lg font-semibold leading-none">
-              单色研究系统
+              AI 智能组卷系统
             </div>
           </div>
         </a>

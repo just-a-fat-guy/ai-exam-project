@@ -1,19 +1,19 @@
-import type { Metadata } from "next";
-import { Lexend } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+// import { Lexend } from "next/font/google";
 import PlausibleProvider from "next-plausible";
 import { GoogleAnalytics } from '@next/third-parties/google'
 import { ResearchHistoryProvider } from "@/hooks/ResearchHistoryContext";
 import "./globals.css";
 import Script from 'next/script';
 
-const inter = Lexend({ subsets: ["latin"] });
+// const inter = Lexend({ subsets: ["latin"] });
 
-let title = "GPT Researcher";
+let title = "AI 智能组卷系统";
 let description =
-  "LLM based autonomous agent that conducts local and web research on any topic and generates a comprehensive report with citations.";
+  "基于 AI 的智能组卷系统，支持题库抽题和 AI 出题，生成高质量试卷。";
 let url = "https://github.com/assafelovic/gpt-researcher";
 let ogimage = "/favicon.ico";
-let sitename = "GPT Researcher";
+let sitename = "AI 智能组卷系统";
 
 export const metadata: Metadata = {
   metadataBase: new URL(url),
@@ -21,8 +21,8 @@ export const metadata: Metadata = {
   description,
   manifest: '/manifest.json',
   icons: {
-    icon: "/img/gptr-black-logo.png",
-    apple: '/img/gptr-black-logo.png',
+    icon: "/img/ai-exam-icon.svg",
+    apple: '/img/ai-exam-icon.svg',
   },
   appleWebApp: {
     capable: true,
@@ -44,12 +44,13 @@ export const metadata: Metadata = {
     title,
     description,
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false,
-  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: '#111827',
 };
 
@@ -66,10 +67,10 @@ export default function RootLayout({
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID!} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <link rel="apple-touch-icon" href="/img/gptr-black-logo.png" />
+        <link rel="apple-touch-icon" href="/img/ai-exam-icon.svg" />
       </head>
       <body
-        className={`app-container ${inter.className} flex min-h-screen flex-col justify-between`}
+        className={`app-container flex min-h-screen flex-col justify-between`}
         suppressHydrationWarning
       >
         <ResearchHistoryProvider>

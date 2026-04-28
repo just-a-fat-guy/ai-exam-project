@@ -1,26 +1,47 @@
 import React, { FC, useEffect, useState } from "react";
+import ExamRequestForm from "./Exam/ExamRequestForm";
 import InputArea from "./ResearchBlocks/elements/InputArea";
 import { motion } from "framer-motion";
+import { ExamRequestDraft } from "@/types/exam";
 
 type THeroProps = {
-  promptValue: string;
-  setPromptValue: React.Dispatch<React.SetStateAction<string>>;
-  handleDisplayResult: (query: string) => void;
+  examDraft?: ExamRequestDraft;
+  setExamDraft?: React.Dispatch<React.SetStateAction<ExamRequestDraft>>;
+  handleValidateExamRequest?: () => void;
+  promptValue?: string;
+  setPromptValue?: React.Dispatch<React.SetStateAction<string>>;
+  handleDisplayResult?: (query: string) => void;
+  loading?: boolean;
 };
 
 const Hero: FC<THeroProps> = ({
+  examDraft,
+  setExamDraft,
+  handleValidateExamRequest,
   promptValue,
   setPromptValue,
   handleDisplayResult,
+  loading = false,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const isExamMode = Boolean(examDraft && setExamDraft && handleValidateExamRequest);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
   const handleClickSuggestion = (value: string) => {
-    setPromptValue(value);
+    if (isExamMode && setExamDraft) {
+      setExamDraft((prev) => ({
+        ...prev,
+        notes_to_generator: value,
+      }));
+      return;
+    }
+
+    if (setPromptValue) {
+      setPromptValue(value);
+    }
   };
 
   const fadeInUp = {
@@ -51,7 +72,7 @@ const Hero: FC<THeroProps> = ({
           className="apple-chip mb-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium uppercase tracking-[0.28em]"
         >
           <span className="h-2 w-2 rounded-full bg-white/70" />
-          AI 研究引擎
+          {isExamMode ? "AI 组卷引擎" : "AI 研究引擎"}
         </motion.div>
 
         <motion.h1
@@ -59,9 +80,19 @@ const Hero: FC<THeroProps> = ({
           transition={{ duration: 0.85, delay: 0.12 }}
           className="apple-heading-gradient max-w-[980px] text-center text-5xl font-semibold leading-[0.95] tracking-[-0.06em] sm:text-6xl lg:text-8xl"
         >
-          以更安静的界面，
-          <br />
-          做更锋利的研究。
+          {isExamMode ? (
+            <>
+              先把试卷约束结构化，
+              <br />
+              再让后端判断它是否可执行。
+            </>
+          ) : (
+            <>
+              以更安静的界面，
+              <br />
+              做更锋利的研究。
+            </>
+          )}
         </motion.h1>
 
         <motion.p
@@ -69,8 +100,9 @@ const Hero: FC<THeroProps> = ({
           transition={{ duration: 0.7, delay: 0.2 }}
           className="mt-6 max-w-[760px] text-center text-base leading-7 text-white/58 sm:text-lg"
         >
-          黑白灰的主视觉、更克制的层次和更强的专注感。输入一个问题，
-          GPT Researcher 会把检索、整理、归纳和成文压缩到同一条工作流里。
+          {isExamMode
+            ? "这一阶段先打通 AI 组卷请求的前端表单和后端验证接口。目标不是立即出卷，而是先把学科、题型、分值、知识点和组卷模式这类输入固定下来。"
+            : "黑白灰的主视觉、更克制的层次和更强的专注感。输入一个问题，GPT Researcher 会把检索、整理、归纳和成文压缩到同一条工作流里。"}
         </motion.p>
 
         <motion.div
@@ -80,14 +112,26 @@ const Hero: FC<THeroProps> = ({
         >
           <div className="pointer-events-none absolute inset-x-[14%] -top-10 h-28 rounded-full bg-white/12 blur-[90px]" />
           <div className="apple-panel-strong rounded-[34px] p-3 sm:p-4">
-            <InputArea
-              promptValue={promptValue}
-              setPromptValue={setPromptValue}
-              handleSubmit={handleDisplayResult}
-            />
+            {isExamMode && examDraft && setExamDraft && handleValidateExamRequest ? (
+              <ExamRequestForm
+                draft={examDraft}
+                setDraft={setExamDraft}
+                onSubmit={handleValidateExamRequest}
+                disabled={loading}
+              />
+            ) : (
+              <InputArea
+                promptValue={promptValue || ""}
+                setPromptValue={setPromptValue || (() => undefined)}
+                handleSubmit={handleDisplayResult || (() => undefined)}
+                disabled={loading}
+              />
+            )}
           </div>
           <p className="mt-5 text-center text-sm text-white/42">
-            GPT Researcher 可能会出错。重要结论请自行复核，并检查来源引用。
+            {isExamMode
+              ? "当前只校验请求结构和业务一致性，不会直接生成试卷正文。"
+              : "GPT Researcher 可能会出错。重要结论请自行复核，并检查来源引用。"}
           </p>
         </motion.div>
 
@@ -137,17 +181,17 @@ type SuggestionType = {
 const suggestions: SuggestionType[] = [
   {
     id: 1,
-    name: "帮我梳理这个行业未来 3 年的关键变化",
+    name: "整体难度前易后难，压轴题控制在最后一题",
     icon: "/img/stock2.svg",
   },
   {
     id: 2,
-    name: "请对比多个来源，给我一份可信的结论",
+    name: "优先从题库抽题，不足部分再允许 AI 补题",
     icon: "/img/news.svg",
   },
   {
     id: 3,
-    name: "围绕这个主题拆出几个值得继续深挖的问题",
+    name: "知识点覆盖要均衡，避免偏题和超纲内容",
     icon: "/img/hiker.svg",
   },
 ];

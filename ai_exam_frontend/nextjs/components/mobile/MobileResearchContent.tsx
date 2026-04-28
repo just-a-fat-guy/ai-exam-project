@@ -2,7 +2,9 @@ import React, { useRef, useState, useEffect } from "react";
 import { useResearchHistoryContext } from "@/hooks/ResearchHistoryContext";
 import MobileChatPanel from "@/components/mobile/MobileChatPanel";
 import { ChatBoxSettings, Data, ChatData, QuestionData, ChatMessage } from "@/types/data";
+import { ExamDraftData } from "@/types/exam";
 import { toast } from "react-hot-toast";
+import ExamReviewPanel from "@/components/Exam/ExamReviewPanel";
 
 interface MobileResearchContentProps {
   orderedData: Data[];
@@ -16,6 +18,14 @@ interface MobileResearchContentProps {
   onNewResearch?: () => void;
   currentResearchId?: string;
   onShareClick?: () => void;
+  workflowMode?: string;
+  examPaper?: ExamDraftData | null;
+  reviewingQuestionIds?: string[];
+  onReviewExamQuestion?: (
+    questionId: string,
+    action: "approve" | "reject" | "request_regeneration",
+    comment?: string
+  ) => Promise<boolean>;
 }
 
 export default function MobileResearchContent({
@@ -29,7 +39,11 @@ export default function MobileResearchContent({
   isProcessingChat: parentIsProcessing = false,
   onNewResearch,
   currentResearchId,
-  onShareClick
+  onShareClick,
+  workflowMode = "exam",
+  examPaper,
+  reviewingQuestionIds = [],
+  onReviewExamQuestion,
 }: MobileResearchContentProps) {
   // Access research history context for saving chat messages
   const { 
@@ -44,6 +58,7 @@ export default function MobileResearchContent({
   const [localLoading, setLocalLoading] = useState(initialLoading);
   const [localProcessing, setLocalProcessing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isExamWorkflow = workflowMode === "exam";
   
   // Sync with parent props when they change
   useEffect(() => {
@@ -249,18 +264,30 @@ export default function MobileResearchContent({
       )}
       
       {/* Main Content - MobileChatPanel */}
-      <div className="flex-1 overflow-hidden">
-        <MobileChatPanel
-          question={questionText}
-          chatPromptValue={chatPromptValue}
-          setChatPromptValue={setChatPromptValue}
-          handleChat={handleLocalChat}
-          orderedData={localOrderedData}
-          loading={localLoading}
-          isProcessingChat={localProcessing}
-          isStopped={isStopped}
-          onNewResearch={onNewResearch}
-        />
+      <div className="flex-1 overflow-y-auto px-3 py-3">
+        {isExamWorkflow && examPaper && onReviewExamQuestion ? (
+          <div className="mb-3">
+            <ExamReviewPanel
+              paper={examPaper}
+              loadingQuestionIds={reviewingQuestionIds}
+              onReviewAction={onReviewExamQuestion}
+            />
+          </div>
+        ) : null}
+
+        <div className="overflow-hidden rounded-[28px]">
+          <MobileChatPanel
+            question={questionText}
+            chatPromptValue={chatPromptValue}
+            setChatPromptValue={setChatPromptValue}
+            handleChat={handleLocalChat}
+            orderedData={localOrderedData}
+            loading={localLoading}
+            isProcessingChat={localProcessing}
+            isStopped={isStopped}
+            onNewResearch={onNewResearch}
+          />
+        </div>
       </div>
       
       {/* Reference element for scrolling */}

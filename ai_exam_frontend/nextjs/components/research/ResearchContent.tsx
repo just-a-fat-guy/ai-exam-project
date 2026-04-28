@@ -4,6 +4,8 @@ import InputArea from "@/components/ResearchBlocks/elements/InputArea";
 import ChatInput from "@/components/ResearchBlocks/elements/ChatInput";
 import LoadingDots from "@/components/LoadingDots";
 import { ChatBoxSettings, Data } from "@/types/data";
+import { ExamDraftData } from "@/types/exam";
+import ExamReviewPanel from "@/components/Exam/ExamReviewPanel";
 
 interface ResearchContentProps {
   showResult: boolean;
@@ -26,6 +28,13 @@ interface ResearchContentProps {
   reset?: () => void;
   isProcessingChat?: boolean;
   bottomRef?: React.RefObject<HTMLDivElement>;
+  examPaper?: ExamDraftData | null;
+  reviewingQuestionIds?: string[];
+  onReviewExamQuestion?: (
+    questionId: string,
+    action: "approve" | "reject" | "request_regeneration",
+    comment?: string
+  ) => Promise<boolean>;
 }
 
 export default function ResearchContent({
@@ -48,11 +57,15 @@ export default function ResearchContent({
   onShareClick,
   reset,
   isProcessingChat = false,
-  bottomRef
+  bottomRef,
+  examPaper,
+  reviewingQuestionIds = [],
+  onReviewExamQuestion,
 }: ResearchContentProps) {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const internalBottomRef = useRef<HTMLDivElement>(null);
   const finalBottomRef = bottomRef || internalBottomRef;
+  const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
 
   return (
     <div className="flex h-full w-full grow flex-col justify-between">
@@ -72,6 +85,14 @@ export default function ResearchContent({
         )}
         
         <div className="container space-y-2 task-components">
+          {isExamWorkflow && examPaper && onReviewExamQuestion ? (
+            <ExamReviewPanel
+              paper={examPaper}
+              loadingQuestionIds={reviewingQuestionIds}
+              onReviewAction={onReviewExamQuestion}
+            />
+          ) : null}
+
           <ResearchResults
             orderedData={orderedData}
             answer={answer}
@@ -96,7 +117,7 @@ export default function ResearchContent({
           </div>
         ) : (
           <div>
-            {isInChatMode && !isStopped ? (
+            {isExamWorkflow ? null : isInChatMode && !isStopped ? (
               <ChatInput
                 promptValue={chatPromptValue}
                 setPromptValue={setChatPromptValue}

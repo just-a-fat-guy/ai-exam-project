@@ -20,9 +20,9 @@ const Question: React.FC<QuestionProps> = ({ question }) => {
         </div>
         <div>
           <div className="text-[11px] uppercase tracking-[0.24em] text-white/34">
-            研究任务
+            当前任务
           </div>
-          <div className="text-sm font-medium text-white/78">当前研究主题</div>
+          <div className="text-sm font-medium text-white/78">任务摘要</div>
         </div>
       </div>
       <div className="log-message mt-1 max-w-full grow break-words text-lg font-medium text-white/88 sm:mt-0">

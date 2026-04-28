@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 # Add the parent directory to sys.path to make sure we can import from server
 sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
@@ -32,6 +32,14 @@ from server.websocket_manager import run_agent
 from utils import write_md_to_word, write_md_to_pdf
 from gpt_researcher.utils.enum import Tone
 from chat.chat import ChatAgentWithMemory
+from schemas import ExamPaperDraftResult, ExamPaperRequest, ExamPaperReviewRequest, ExamPaperReviewResult
+from services import (
+    apply_exam_review_actions,
+    build_exam_paper_schema_error_result,
+    build_exam_paper_preview,
+    generate_exam_preview_paper,
+    validate_exam_paper_request_model,
+)
 
 from server.report_store import ReportStore
 
@@ -65,6 +73,12 @@ class ChatRequest(BaseModel):
     
     report: str
     messages: List[Dict[str, Any]]
+
+
+# 说明：
+# 当前 app 主流程仍然是“研究报告”链路，因此 `ResearchRequest` 先保留。
+# 新增的 `ExamPaperRequest` 代表 AI 组卷方向的新业务输入模型，
+# 后续真正切组卷流程时，会逐步从 ResearchRequest 迁移过来。
 
 
 @asynccontextmanager
@@ -244,6 +258,152 @@ async def get_report_chat(research_id: str):
     if report is None:
         raise HTTPException(status_code=404, detail="Report not found")
     return {"chatMessages": report.get("chatMessages") or []}
+
+
+@app.get("/api/exam-papers/request-schema")
+async def get_exam_paper_request_schema():
+    """返回 AI 组卷请求模型的 JSON Schema。
+
+    这个接口的价值主要在于：
+    1. 前端可以直接据此对齐字段
+    2. 后续如果要生成表单或做接口文档，可以直接消费这份 schema
+    3. 当前阶段先定义数据结构，不强行接入完整组卷流程
+    """
+    return {"schema": ExamPaperRequest.model_json_schema()}
+
+
+@app.post("/api/exam-papers/validate")
+async def validate_exam_paper_request(payload: Dict[str, Any]):
+    """校验 AI 组卷请求。
+
+    这里故意不让 FastAPI 直接把 schema 错误抛成 422，而是统一返回一份
+    可联调的验证结果：
+
+    - schema_valid: 字段结构是否通过
+    - business_valid: 业务规则是否通过
+    - errors / warnings: 前端可直接展示
+
+    这样后面做前端表单时，既能看到字段级问题，也能看到“总分不一致”
+    这类组合规则问题。
+    """
+
+    try:
+        exam_request = ExamPaperRequest.model_validate(payload)
+    except ValidationError as exc:
+        return build_exam_paper_schema_error_result(exc.errors())
+
+    return validate_exam_paper_request_model(exam_request)
+
+
+@app.post("/api/exam-papers/preview")
+async def preview_exam_paper_request(payload: Dict[str, Any]):
+    """生成 AI 组卷蓝图预览。
+
+    这一步不直接返回正式题目，而是返回：
+    1. 校验结果
+    2. 试卷骨架
+    3. 题位拆分
+    4. 来源策略和审核清单
+
+    这样前端可以在真正接题库抽题前，先确认“这份请求会被系统理解成什么样子”。
+    """
+
+    try:
+        exam_request = ExamPaperRequest.model_validate(payload)
+    except ValidationError as exc:
+        validation_result = build_exam_paper_schema_error_result(exc.errors())
+        return {
+            "valid": False,
+            "validation": validation_result,
+            "preview": None,
+        }
+
+    validation_result = validate_exam_paper_request_model(exam_request)
+    if not validation_result["valid"]:
+        return {
+            "valid": False,
+            "validation": validation_result,
+            "preview": None,
+        }
+
+    preview = build_exam_paper_preview(exam_request, validation_result)
+    return {
+        "valid": True,
+        "validation": validation_result,
+        "preview": preview,
+    }
+
+
+@app.post("/api/exam-papers/generate-preview-paper", response_model=ExamPaperDraftResult)
+async def generate_preview_exam_paper(payload: Dict[str, Any]):
+    """生成题目级试卷草案。
+
+    这一步比蓝图预览更进一步：
+    1. 先做 schema + 业务校验
+    2. 再把题位结构真正落成“题目级 JSON”
+
+    当前阶段返回的是“模板化预览草案”，它的目标不是替代正式题目生成，
+    而是先把题目级输出结构、审核字段和前端展示链路稳定下来。
+    后面接真实题库或 LLM 出题时，优先复用这份输出 schema。
+    """
+
+    try:
+        exam_request = ExamPaperRequest.model_validate(payload)
+    except ValidationError as exc:
+        validation_result = build_exam_paper_schema_error_result(exc.errors())
+        return ExamPaperDraftResult(
+            valid=False,
+            validation=validation_result,
+            paper=None,
+        )
+
+    validation_result = validate_exam_paper_request_model(exam_request)
+    if not validation_result["valid"]:
+        return ExamPaperDraftResult(
+            valid=False,
+            validation=validation_result,
+            paper=None,
+        )
+
+    paper = await generate_exam_preview_paper(exam_request, validation_result)
+    return ExamPaperDraftResult(
+        valid=True,
+        validation=validation_result,
+        paper=paper,
+    )
+
+
+@app.post("/api/exam-papers/review-actions", response_model=ExamPaperReviewResult)
+async def review_exam_paper_actions(payload: Dict[str, Any]):
+    """应用人工审核动作。
+
+    当前接口用于：
+    1. 对单题做通过 / 驳回 / 要求重生成
+    2. 回写 review_status / review_history / review_comments
+    3. 对 request_regeneration 真正触发单题再生成
+    4. 重新计算质量摘要和审核摘要
+    """
+
+    try:
+        review_request = ExamPaperReviewRequest.model_validate(payload)
+    except ValidationError as exc:
+        return ExamPaperReviewResult(
+            valid=False,
+            errors=[
+                {
+                    "level": "error",
+                    "code": "schema_validation_error",
+                    "message": error.get("msg", "审核动作请求结构校验失败。"),
+                    "path": ".".join(str(part) for part in error.get("loc", ())) or "root",
+                }
+                for error in exc.errors()
+            ],
+            warnings=[],
+            applied_action_count=0,
+            paper=None,
+        )
+
+    return await apply_exam_review_actions(review_request)
 
 
 @app.post("/api/reports/{research_id}/chat")

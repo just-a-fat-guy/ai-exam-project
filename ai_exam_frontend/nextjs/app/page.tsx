@@ -8,6 +8,14 @@ import { useScrollHandler } from '@/hooks/useScrollHandler';
 import { startLanggraphResearch } from '../components/Langgraph/Langgraph';
 import findDifferences from '../helpers/findDifferences';
 import { Data, ChatBoxSettings, QuestionData, ChatMessage, ChatData } from '../types/data';
+import {
+  ExamDraftData,
+  ExamDraftResult,
+  ExamPaperReviewResult,
+  ExamPaperValidatePayload,
+  ExamRequestDraft,
+  ExamValidationResult,
+} from '../types/exam';
 import { preprocessOrderedData } from '../utils/dataProcessing';
 import { toast } from "react-hot-toast";
 import { v4 as uuidv4 } from 'uuid';
@@ -25,6 +33,447 @@ import { getAppropriateLayout } from "@/utils/getLayout";
 import MobileHomeScreen from "@/components/mobile/MobileHomeScreen";
 import MobileResearchContent from "@/components/mobile/MobileResearchContent";
 
+const createInitialExamDraft = (): ExamRequestDraft => ({
+  paper_title: "2026年春季九年级数学单元测验",
+  subject: "math",
+  school_stage: "junior_high",
+  grade: "grade_9",
+  exam_type: "unit_test",
+  term: "spring",
+  language: "zh-CN",
+  duration_minutes: "90",
+  total_score: "120",
+  target_question_count: "22",
+  knowledge_points_text: "一元二次方程\n二次函数",
+  question_bank_ids_text: "bank_math_junior",
+  notes_to_generator: "整体难度前易后难，避免超纲内容。",
+  generation_mode: "hybrid",
+  sections: [
+    {
+      id: "section-default-1",
+      section_name: "选择题",
+      section_order: "1",
+      section_score: "40",
+      instructions: "本大题共 10 小题，每题只有 1 个正确答案。",
+      question_requirements: [
+        {
+          id: "req-default-1",
+          question_type: "single_choice",
+          question_count: "10",
+          score_per_question: "4",
+          total_score: "",
+          preferred_difficulty: "easy",
+          knowledge_points_text: "一元二次方程, 二次函数",
+          allow_ai_generation: false,
+        },
+      ],
+    },
+    {
+      id: "section-default-2",
+      section_name: "解答题",
+      section_order: "2",
+      section_score: "80",
+      instructions: "要求写出必要的推理和计算过程。",
+      question_requirements: [
+        {
+          id: "req-default-2",
+          question_type: "calculation",
+          question_count: "4",
+          score_per_question: "",
+          total_score: "32",
+          preferred_difficulty: "medium",
+          knowledge_points_text: "一元二次方程",
+          allow_ai_generation: true,
+        },
+        {
+          id: "req-default-3",
+          question_type: "case_analysis",
+          question_count: "2",
+          score_per_question: "",
+          total_score: "48",
+          preferred_difficulty: "hard",
+          knowledge_points_text: "二次函数",
+          allow_ai_generation: true,
+        },
+      ],
+    },
+  ],
+});
+
+const parseTextList = (value: string) =>
+  value
+    .split(/[\n,，;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const toNumberOrUndefined = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const buildExamPayload = (
+  draft: ExamRequestDraft,
+  settings: ChatBoxSettings
+): ExamPaperValidatePayload => ({
+  paper_title: draft.paper_title.trim(),
+  subject: draft.subject,
+  school_stage: draft.school_stage,
+  grade: draft.grade.trim(),
+  exam_type: draft.exam_type.trim(),
+  term: draft.term.trim() || undefined,
+  language: draft.language.trim() || "zh-CN",
+  duration_minutes: toNumberOrUndefined(draft.duration_minutes),
+  total_score: Number(draft.total_score || 0),
+  target_question_count: toNumberOrUndefined(draft.target_question_count),
+  knowledge_points: parseTextList(draft.knowledge_points_text).map((name) => ({
+    name,
+    required: true,
+  })),
+  sections: draft.sections.map((section) => ({
+    section_name: section.section_name.trim(),
+    section_order: toNumberOrUndefined(section.section_order),
+    section_score: toNumberOrUndefined(section.section_score),
+    instructions: section.instructions.trim() || undefined,
+    question_requirements: section.question_requirements.map((requirement) => ({
+      question_type: requirement.question_type,
+      question_count: Number(requirement.question_count || 0),
+      score_per_question: toNumberOrUndefined(requirement.score_per_question),
+      total_score: toNumberOrUndefined(requirement.total_score),
+      preferred_difficulty: requirement.preferred_difficulty,
+      knowledge_points: parseTextList(requirement.knowledge_points_text),
+      allow_ai_generation: requirement.allow_ai_generation,
+      constraints: [],
+    })),
+  })),
+  source_scope: {
+    question_bank_ids: parseTextList(draft.question_bank_ids_text),
+    syllabus_ids: [],
+    document_ids: [],
+    tags: [],
+    allowed_regions: [],
+    allowed_years: [],
+    exclude_question_ids: [],
+  },
+  generation_policy: {
+    mode: (draft.generation_mode || settings.generation_mode || "hybrid") as ExamPaperValidatePayload["generation_policy"]["mode"],
+    allow_question_rewrite: false,
+    allow_ai_generate_missing: true,
+    deduplicate_questions: true,
+    include_answers: settings.include_answers ?? true,
+    include_explanations: settings.include_explanations ?? true,
+    max_candidate_questions_per_slot: 5,
+  },
+  review_requirement: {
+    enabled: true,
+    require_answer_review: true,
+    require_explanation_review: true,
+    require_knowledge_point_review: false,
+  },
+  notes_to_generator: draft.notes_to_generator.trim() || undefined,
+  output_formats: settings.output_formats?.length ? settings.output_formats : ["json", "docx"],
+  metadata: {
+    source: "frontend_exam_request_form",
+  },
+});
+
+const buildExamTaskSummary = (draft: ExamRequestDraft) =>
+  [
+    draft.paper_title.trim(),
+    subjectLabelMap[draft.subject] || draft.subject,
+    draft.grade.trim(),
+    draft.exam_type.trim(),
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+const buildValidationMarkdown = (
+  result: ExamValidationResult,
+  payload: ExamPaperValidatePayload
+) => {
+  const lines: string[] = [];
+  const summary = result.summary;
+
+  lines.push(`# 组卷请求校验结果`);
+  lines.push("");
+  lines.push(`- 总体结论：${result.valid ? "通过" : "未通过"}`);
+  lines.push(`- Schema 校验：${result.schema_valid ? "通过" : "未通过"}`);
+  lines.push(`- 业务规则校验：${result.business_valid ? "通过" : "未通过"}`);
+  lines.push("");
+
+  if (summary) {
+    lines.push("## 请求摘要");
+    lines.push("");
+    lines.push(`- 试卷标题：${summary.paper_title}`);
+    lines.push(`- 学科 / 学段：${summary.subject} / ${summary.school_stage}`);
+    lines.push(`- 大题数量：${summary.section_count}`);
+    lines.push(`- 目标总分：${summary.requested_total_score}`);
+    lines.push(`- 推导总分：${summary.computed_total_score ?? "无法完整推导"}`);
+    lines.push(`- 目标题量：${summary.target_question_count ?? "未设置"}`);
+    lines.push(`- 推导题量：${summary.computed_question_count}`);
+    lines.push(`- 组卷模式：${summary.generation_mode}`);
+    lines.push(`- 输出格式：${summary.output_formats.join(", ") || "未设置"}`);
+    lines.push("");
+
+    if (Object.keys(summary.question_type_breakdown || {}).length > 0) {
+      lines.push("## 题型拆分");
+      lines.push("");
+      Object.entries(summary.question_type_breakdown).forEach(([questionType, count]) => {
+        lines.push(`- ${questionType}：${count} 题`);
+      });
+      lines.push("");
+    }
+  }
+
+  if (result.errors.length > 0) {
+    lines.push("## 错误");
+    lines.push("");
+    result.errors.forEach((issue) => {
+      lines.push(`- [${issue.path}] ${issue.message}`);
+    });
+    lines.push("");
+  }
+
+  if (result.warnings.length > 0) {
+    lines.push("## 警告");
+    lines.push("");
+    result.warnings.forEach((issue) => {
+      lines.push(`- [${issue.path}] ${issue.message}`);
+    });
+    lines.push("");
+  }
+
+  lines.push("## 已提交的核心约束");
+  lines.push("");
+  lines.push(`- 全卷知识点：${payload.knowledge_points.map((item) => item.name).join("、") || "未填写"}`);
+  lines.push(`- 题库范围：${payload.source_scope.question_bank_ids.join("、") || "未填写"}`);
+  lines.push(`- 备注：${payload.notes_to_generator || "无"}`);
+
+  return lines.join("\n");
+};
+
+const questionTypeLabelMap: Record<string, string> = {
+  single_choice: "单选题",
+  multiple_choice: "多选题",
+  true_false: "判断题",
+  fill_blank: "填空题",
+  short_answer: "简答题",
+  essay: "作文 / 论述题",
+  calculation: "计算题",
+  case_analysis: "案例分析题",
+  reading_comprehension: "阅读理解题",
+  cloze: "完形填空",
+  translation: "翻译题",
+  practical: "实践题",
+  composite: "综合题",
+};
+
+const difficultyLabelMap: Record<string, string> = {
+  easy: "简单",
+  medium: "中等",
+  hard: "困难",
+};
+
+const sourceStrategyLabelMap: Record<string, string> = {
+  question_bank_only: "仅题库",
+  ai_generate_only: "仅 AI 生成",
+  question_bank_first_then_ai: "题库优先，不足时 AI 补题",
+};
+
+const buildDraftMarkdownFromPaper = (
+  paper: ExamDraftData | null,
+  validation: ExamValidationResult | null,
+  payload?: ExamPaperValidatePayload
+) => {
+  if (!paper) {
+    return validation && payload ? buildValidationMarkdown(validation, payload) : "# 试卷草案为空";
+  }
+
+  const lines: string[] = [];
+
+  lines.push("# 试卷草案预览");
+  lines.push("");
+  lines.push(`- 草案 ID：${paper.paper_id}`);
+  lines.push(`- 试卷标题：${paper.paper_title}`);
+  lines.push(`- 学科 / 学段：${subjectLabelMap[paper.meta.subject] || paper.meta.subject} / ${paper.meta.school_stage}`);
+  lines.push(`- 年级 / 考试类型：${paper.meta.grade} / ${paper.meta.exam_type}`);
+  lines.push(`- 语言 / 时长：${paper.meta.language} / ${paper.meta.duration_minutes ?? "未设置"} 分钟`);
+  lines.push(`- 生成阶段：${paper.generation_stage}`);
+  lines.push("");
+
+  lines.push("## 整体摘要");
+  lines.push("");
+  lines.push(`- 大题数量：${paper.totals.section_count}`);
+  lines.push(`- 请求总分：${paper.totals.requested_total_score ?? "未设置"}`);
+  lines.push(`- 预估总分：${paper.totals.estimated_total_score ?? "无法完整推导"}`);
+  lines.push(`- 请求题量：${paper.totals.requested_question_count ?? "未设置"}`);
+  lines.push(`- 当前草案题量：${paper.totals.computed_question_count}`);
+  if (typeof paper.totals.question_bank_slot_count === "number") {
+    lines.push(`- 题库相关题位：${paper.totals.question_bank_slot_count}`);
+  }
+  if (typeof paper.totals.ai_enabled_slot_count === "number") {
+    lines.push(`- 允许 AI 参与题位：${paper.totals.ai_enabled_slot_count}`);
+  }
+  lines.push("");
+
+  lines.push("## 组卷策略");
+  lines.push("");
+  lines.push(`- 模式：${sourceStrategyLabelMap[paper.generation_policy.mode] || paper.generation_policy.mode}`);
+  lines.push(`- 输出格式：${paper.generation_policy.output_formats.join(", ") || "未设置"}`);
+  lines.push(`- 包含答案：${paper.generation_policy.include_answers ? "是" : "否"}`);
+  lines.push(`- 包含解析：${paper.generation_policy.include_explanations ? "是" : "否"}`);
+  lines.push(`- 题目去重：${paper.generation_policy.deduplicate_questions ? "开启" : "关闭"}`);
+  lines.push("");
+
+  if (paper.quality_summary) {
+    lines.push("## 质量摘要");
+    lines.push("");
+    lines.push(`- 总题数：${paper.quality_summary.total_questions}`);
+    lines.push(`- 存在错误的题目数：${paper.quality_summary.error_question_count}`);
+    lines.push(`- 存在警告的题目数：${paper.quality_summary.warning_question_count}`);
+    lines.push(`- 总问题数：${paper.quality_summary.total_issue_count}`);
+    lines.push(`- 待重生成题目数：${paper.quality_summary.pending_regeneration_count}`);
+    lines.push(`- AI 已生成题目数：${paper.quality_summary.generated_question_count}`);
+    lines.push(`- 模板 / 回退题目数：${paper.quality_summary.template_question_count}`);
+    lines.push(`- 审核中题目数：${paper.review_summary?.pending_review_count ?? 0}`);
+    lines.push(`- 已通过审核题目数：${paper.review_summary?.reviewed_count ?? 0}`);
+    lines.push(`- 已驳回题目数：${paper.review_summary?.rejected_count ?? 0}`);
+    lines.push("");
+  }
+
+  if (paper.source_scope.question_bank_ids.length > 0) {
+    lines.push("## 题库范围");
+    lines.push("");
+    paper.source_scope.question_bank_ids.forEach((id) => {
+      lines.push(`- ${id}`);
+    });
+    lines.push("");
+  }
+
+  if (paper.knowledge_points.length > 0) {
+    lines.push("## 全卷知识点");
+    lines.push("");
+    paper.knowledge_points.forEach((point) => {
+      const targetCount = point.target_question_count ? `，目标题量 ${point.target_question_count}` : "";
+      lines.push(`- ${point.name}${point.required ? "（必考）" : ""}${targetCount}`);
+    });
+    lines.push("");
+  }
+
+  lines.push("## 试卷草案");
+  lines.push("");
+  paper.sections.forEach((section, sectionIndex) => {
+    lines.push(`### ${sectionIndex + 1}. ${section.section_name}`);
+    lines.push("");
+    lines.push(`- 排序：${section.section_order}`);
+    lines.push(`- 题目数：${section.question_count}`);
+    lines.push(`- 请求分值：${section.requested_section_score ?? "未设置"}`);
+    lines.push(`- 当前草案分值：${section.computed_section_score ?? "无法完整推导"}`);
+    if (section.instructions) {
+      lines.push(`- 作答说明：${section.instructions}`);
+    }
+    lines.push("");
+
+    section.questions.forEach((question, questionIndex) => {
+      lines.push(
+        `#### ${sectionIndex + 1}.${questionIndex + 1} ` +
+        `${questionTypeLabelMap[question.question_type] || question.question_type}`
+      );
+      lines.push("");
+      lines.push(
+        `- 题号：${question.question_id}，题位：${question.slot_id}，分值：${question.score ?? "未设置"}，` +
+        `难度 ${question.difficulty ? difficultyLabelMap[question.difficulty] || question.difficulty : "未指定"}，` +
+        `来源策略 ${sourceStrategyLabelMap[question.source_strategy] || question.source_strategy}`
+      );
+      lines.push(`- 草案状态：${question.draft_status}，审核状态：${question.review_status}`);
+      if (question.knowledge_points.length > 0) {
+        lines.push(`- 覆盖知识点：${question.knowledge_points.join("、")}`);
+      }
+      lines.push(`- 题干：${question.stem}`);
+      if (question.options.length > 0) {
+        lines.push("- 选项：");
+        question.options.forEach((option) => {
+          lines.push(
+            `  - ${option.label}. ${option.content}` +
+            (option.is_correct === true ? " [参考正确]" : "")
+          );
+        });
+      }
+      if (question.reference_answer) {
+        lines.push(
+          `- 参考答案：${Array.isArray(question.reference_answer) ? question.reference_answer.join("、") : question.reference_answer}`
+        );
+      }
+      if (question.explanation) {
+        lines.push(`- 参考解析：${question.explanation}`);
+      }
+      if (question.quality_flags.length > 0) {
+        lines.push(`- 质量标记：${question.quality_flags.join("、")}`);
+      }
+      if (question.quality_issues.length > 0) {
+        lines.push("- 质量问题：");
+        question.quality_issues.forEach((issue) => {
+          lines.push(`  - [${issue.level}] ${issue.message}`);
+        });
+      }
+      if (question.review_comments.length > 0) {
+        lines.push("- 审核备注：");
+        question.review_comments.forEach((comment) => {
+          lines.push(`  - ${comment}`);
+        });
+      }
+      lines.push("");
+    });
+  });
+
+  if (paper.generation_notes.length > 0) {
+    lines.push("## 生成说明");
+    lines.push("");
+    paper.generation_notes.forEach((note) => {
+      lines.push(`- ${note}`);
+    });
+    lines.push("");
+  }
+
+  if (paper.review_checklist.length > 0) {
+    lines.push("## 人工审核清单");
+    lines.push("");
+    paper.review_checklist.forEach((item) => {
+      lines.push(`- ${item}`);
+    });
+    lines.push("");
+  }
+
+  if (paper.warnings.length > 0 || (validation?.warnings?.length || 0) > 0) {
+    lines.push("## 仍需注意的警告");
+    lines.push("");
+    [...paper.warnings, ...(validation?.warnings || [])].forEach((issue) => {
+      lines.push(`- [${issue.path}] ${issue.message}`);
+    });
+    lines.push("");
+  }
+
+  return lines.join("\n");
+};
+
+const buildDraftMarkdown = (
+  draftResult: ExamDraftResult,
+  payload: ExamPaperValidatePayload
+) => buildDraftMarkdownFromPaper(draftResult.paper, draftResult.validation, payload);
+
+const subjectLabelMap: Record<string, string> = {
+  chinese: "语文",
+  math: "数学",
+  english: "英语",
+  physics: "物理",
+  chemistry: "化学",
+  biology: "生物",
+  history: "历史",
+  geography: "地理",
+  politics: "政治",
+};
+
 export default function Home() {
   const router = useRouter();
   const [promptValue, setPromptValue] = useState("");
@@ -33,18 +482,27 @@ export default function Home() {
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
   const [isInChatMode, setIsInChatMode] = useState(false);
+  const [examDraft, setExamDraft] = useState<ExamRequestDraft>(createInitialExamDraft);
+  const [currentExamPaper, setCurrentExamPaper] = useState<ExamDraftData | null>(null);
+  const [currentExamValidation, setCurrentExamValidation] = useState<ExamValidationResult | null>(null);
+  const [reviewingQuestionIds, setReviewingQuestionIds] = useState<string[]>([]);
   const [chatBoxSettings, setChatBoxSettings] = useState<ChatBoxSettings>(() => {
     // Default settings
     const defaultSettings = {
+      workflow_mode: "exam",
       report_type: "research_report",
       report_source: "web",
       tone: "Objective",
       domains: [],
       defaultReportType: "research_report",
-      layoutType: 'copilot',
+      layoutType: 'research',
       mcp_enabled: false,
       mcp_configs: [],
       mcp_strategy: "fast",
+      generation_mode: "hybrid",
+      include_answers: true,
+      include_explanations: true,
+      output_formats: ["json", "docx"],
     };
 
     // Try to load all settings from localStorage
@@ -75,6 +533,7 @@ export default function Home() {
   const [currentResearchId, setCurrentResearchId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isProcessingChat, setIsProcessingChat] = useState(false);
+  const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
 
   // Use our custom scroll handler
   const { showScrollButton, scrollToBottom } = useScrollHandler(mainContentRef);
@@ -122,6 +581,180 @@ export default function Home() {
       socket.send(JSON.stringify({ type: 'human_feedback', content: feedback }));
     }
     setShowHumanFeedback(false);
+  };
+
+  const handleValidateExamRequest = async () => {
+    const payload = buildExamPayload(examDraft, chatBoxSettings);
+    const taskSummary = buildExamTaskSummary(examDraft);
+
+    setIsInChatMode(false);
+    setShowResult(true);
+    setLoading(true);
+    setQuestion(taskSummary);
+    setAnswer("");
+    setAllLogs([]);
+    setCurrentResearchId(null);
+    setCurrentExamPaper(null);
+    setCurrentExamValidation(null);
+    setReviewingQuestionIds([]);
+    setOrderedData([{ type: "question", content: taskSummary } as QuestionData]);
+    setChatBoxSettings((prev) => ({
+      ...prev,
+      workflow_mode: "exam",
+      layoutType: "research",
+    }));
+
+    try {
+      const response = await fetch("/api/exam-papers/validate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to validate exam request: ${response.status}`);
+      }
+
+      const result: ExamValidationResult = await response.json();
+      if (!result.valid) {
+        setCurrentExamValidation(result);
+        const markdown = buildValidationMarkdown(result, payload);
+        setAnswer(markdown);
+        setOrderedData([
+          { type: "question", content: taskSummary } as QuestionData,
+          { type: "report_complete", output: markdown } as Data,
+        ]);
+        toast.error("组卷请求未通过校验");
+        return;
+      }
+
+      const previewResponse = await fetch("/api/exam-papers/generate-preview-paper", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!previewResponse.ok) {
+        throw new Error(`Failed to build exam draft: ${previewResponse.status}`);
+      }
+
+      const previewResult: ExamDraftResult = await previewResponse.json();
+      if (!previewResult.valid || !previewResult.paper) {
+        setCurrentExamValidation(previewResult.validation);
+        const markdown =
+          buildValidationMarkdown(previewResult.validation, payload) +
+          "\n\n## 草案状态\n\n组卷请求虽然通过了基础校验，但题目级试卷草案尚未生成成功。";
+        setAnswer(markdown);
+        setOrderedData([
+          { type: "question", content: taskSummary } as QuestionData,
+          { type: "report_complete", output: markdown } as Data,
+        ]);
+        toast.error("校验通过，但试卷草案生成失败");
+        return;
+      }
+
+      setCurrentExamPaper(previewResult.paper);
+      setCurrentExamValidation(previewResult.validation);
+      const markdown = buildDraftMarkdown(previewResult, payload);
+      setAnswer(markdown);
+      setOrderedData([
+        { type: "question", content: taskSummary } as QuestionData,
+        { type: "report_complete", output: markdown } as Data,
+      ]);
+
+      toast.success("题目级试卷草案已生成");
+    } catch (error) {
+      console.error("Exam request validation error:", error);
+      const fallbackMarkdown = [
+        "# 试卷草案生成失败",
+        "",
+        "后端校验或题目级草案接口调用失败，当前无法生成这份组卷请求的试卷草案。",
+        "",
+        "请优先检查：",
+        "- 后端服务是否已启动",
+        "- `/api/exam-papers/validate` 是否可访问",
+        "- `/api/exam-papers/generate-preview-paper` 是否可访问",
+        "- 当前请求字段是否被前端正确序列化",
+      ].join("\n");
+
+      setAnswer(fallbackMarkdown);
+      setOrderedData([
+        { type: "question", content: taskSummary } as QuestionData,
+        { type: "report_complete", output: fallbackMarkdown } as Data,
+      ]);
+      toast.error("试卷草案生成失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReviewExamQuestion = async (
+    questionId: string,
+    action: "approve" | "reject" | "request_regeneration",
+    comment?: string
+  ) => {
+    if (!currentExamPaper) {
+      toast.error("当前没有可审核的试卷草案");
+      return false;
+    }
+
+    if ((action === "reject" || action === "request_regeneration") && !comment?.trim()) {
+      toast.error("驳回或重生成时需要填写审核原因");
+      return false;
+    }
+
+    setReviewingQuestionIds((prev) => [...prev, questionId]);
+
+    try {
+      const response = await fetch("/api/exam-papers/review-actions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          paper: currentExamPaper,
+          reviewer: "frontend_teacher",
+          actions: [
+            {
+              question_id: questionId,
+              action,
+              comment: comment?.trim() || undefined,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to apply review action: ${response.status}`);
+      }
+
+      const result: ExamPaperReviewResult = await response.json();
+      if (!result.valid || !result.paper) {
+        const errorMessage = result.errors[0]?.message || "审核动作应用失败";
+        toast.error(errorMessage);
+        return false;
+      }
+
+      setCurrentExamPaper(result.paper);
+      const markdown = buildDraftMarkdownFromPaper(result.paper, currentExamValidation);
+      setAnswer(markdown);
+      setOrderedData([
+        { type: "question", content: question } as QuestionData,
+        { type: "report_complete", output: markdown } as Data,
+      ]);
+      toast.success(action === "approve" ? "已通过该题" : action === "reject" ? "已驳回该题" : "已标记为重生成");
+      return true;
+    } catch (error) {
+      console.error("Exam review action error:", error);
+      toast.error("审核动作提交失败");
+      return false;
+    } finally {
+      setReviewingQuestionIds((prev) => prev.filter((id) => id !== questionId));
+    }
   };
 
   const handleChat = async (message: string) => {
@@ -330,6 +963,9 @@ export default function Home() {
     setPromptValue("");
     setAnswer("");
     setCurrentResearchId(null); // Reset current research ID for new research
+    setCurrentExamPaper(null);
+    setCurrentExamValidation(null);
+    setReviewingQuestionIds([]);
     setOrderedData((prevOrder) => [...prevOrder, { type: 'question', content: newQuestion }]);
 
     // For mobile, use a simplified approach without websockets
@@ -455,6 +1091,9 @@ export default function Home() {
     setPromptValue("");
     setAnswer("");
     setCurrentResearchId(null);
+    setCurrentExamPaper(null);
+    setCurrentExamValidation(null);
+    setReviewingQuestionIds([]);
     
     // Start with just the question
     setOrderedData([{ type: 'question', content: newQuestion } as QuestionData]);
@@ -661,6 +1300,9 @@ export default function Home() {
     setIsInChatMode(false);
     setCurrentResearchId(null); // Reset research ID
     setIsProcessingChat(false);
+    setCurrentExamPaper(null);
+    setCurrentExamValidation(null);
+    setReviewingQuestionIds([]);
     
     // Clear previous research data
     setQuestion("");
@@ -671,6 +1313,7 @@ export default function Home() {
     // Reset feedback states
     setShowHumanFeedback(false);
     setQuestionForHuman(false);
+    setExamDraft(createInitialExamDraft());
     
     // Clean up connections
     if (socket) {
@@ -849,19 +1492,19 @@ export default function Home() {
 
   // Set chat mode when a report is complete
   useEffect(() => {
-    if (showResult && !loading && answer && !isInChatMode) {
+    if (!isExamWorkflow && showResult && !loading && answer && !isInChatMode) {
       setIsInChatMode(true);
     }
-  }, [showResult, loading, answer, isInChatMode]);
+  }, [showResult, loading, answer, isInChatMode, isExamWorkflow]);
 
   // Update the renderMobileContent function to use both mobile-specific functions
   const renderMobileContent = () => {
     if (!showResult) {
       return (
         <MobileHomeScreen
-          promptValue={promptValue}
-          setPromptValue={setPromptValue}
-          handleDisplayResult={handleMobileDisplayResult}
+          examDraft={examDraft}
+          setExamDraft={setExamDraft}
+          handleValidateExamRequest={handleValidateExamRequest}
           isLoading={loading}
         />
       );
@@ -879,6 +1522,10 @@ export default function Home() {
           onNewResearch={handleStartNewResearch}
           currentResearchId={currentResearchId || undefined}
           onShareClick={currentResearchId ? handleCopyUrl : undefined}
+          workflowMode={chatBoxSettings.workflow_mode}
+          examPaper={currentExamPaper}
+          reviewingQuestionIds={reviewingQuestionIds}
+          onReviewExamQuestion={handleReviewExamQuestion}
         />
       );
     }
@@ -926,9 +1573,10 @@ export default function Home() {
               />
               
               <Hero
-                promptValue={promptValue}
-                setPromptValue={setPromptValue}
-                handleDisplayResult={handleDisplayResult}
+                examDraft={examDraft}
+                setExamDraft={setExamDraft}
+                handleValidateExamRequest={handleValidateExamRequest}
+                loading={loading}
               />
             </>
           )
@@ -976,6 +1624,9 @@ export default function Home() {
                   isProcessingChat={isProcessingChat}
                   onNewResearch={handleStartNewResearch}
                   toggleSidebar={toggleSidebar}
+                  examPaper={currentExamPaper}
+                  reviewingQuestionIds={reviewingQuestionIds}
+                  onReviewExamQuestion={handleReviewExamQuestion}
                 />
               ) : (
                 <ResearchContent
@@ -998,6 +1649,9 @@ export default function Home() {
                   onShareClick={currentResearchId ? handleCopyUrl : undefined}
                   reset={reset}
                   isProcessingChat={isProcessingChat}
+                  examPaper={currentExamPaper}
+                  reviewingQuestionIds={reviewingQuestionIds}
+                  onReviewExamQuestion={handleReviewExamQuestion}
                 />
               )}
               

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { ResearchResults } from '@/components/ResearchResults';
 import { Data, ChatBoxSettings } from '@/types/data';
+import { ExamDraftData } from '@/types/exam';
 import LoadingDots from '@/components/LoadingDots';
 import Image from 'next/image';
+import ExamReviewPanel from '@/components/Exam/ExamReviewPanel';
 
 interface ResearchPanelProps {
   orderedData: Data[];
@@ -17,6 +19,13 @@ interface ResearchPanelProps {
   onNewResearch?: () => void;
   loading?: boolean;
   toggleSidebar?: () => void;
+  examPaper?: ExamDraftData | null;
+  reviewingQuestionIds?: string[];
+  onReviewExamQuestion?: (
+    questionId: string,
+    action: "approve" | "reject" | "request_regeneration",
+    comment?: string
+  ) => Promise<boolean>;
 }
 
 const ResearchPanel: React.FC<ResearchPanelProps> = ({
@@ -31,10 +40,14 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   setIsCopilotVisible,
   onNewResearch,
   loading,
-  toggleSidebar
+  toggleSidebar,
+  examPaper,
+  reviewingQuestionIds = [],
+  onReviewExamQuestion,
 }) => {
   // Determine if research is complete (has answer) and copilot should be highlighted
   const researchComplete = Boolean(answer && answer.length > 0);
+  const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
   const [isNotificationDismissed, setIsNotificationDismissed] = useState(false);
   
   return (
@@ -54,10 +67,10 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-white/34">
-              研究视图
+              {isExamWorkflow ? "组卷视图" : "研究视图"}
             </div>
             <div className="text-sm font-medium text-white/82">
-              报告与来源
+              {isExamWorkflow ? "请求与校验结果" : "报告与来源"}
             </div>
           </div>
         </div>
@@ -74,7 +87,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              新建研究
+              {isExamWorkflow ? "新建组卷请求" : "新建研究"}
             </button>
           )}
           
@@ -94,7 +107,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
           )}
           
           {/* Show Copilot button - only visible when copilot is hidden */}
-          {!isCopilotVisible && setIsCopilotVisible && (
+          {!isExamWorkflow && !isCopilotVisible && setIsCopilotVisible && (
             <button 
               onClick={() => setIsCopilotVisible(true)}
               className={`apple-button-secondary flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium ${researchComplete ? 'animate-chat-button-pulse' : ''}`}
@@ -110,7 +123,15 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
       
       <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
         {/* Filter out chat messages so they only show in the chat panel */}
-        <div className="space-y-4 relative">          
+        <div className="space-y-4 relative">
+          {isExamWorkflow && examPaper && onReviewExamQuestion ? (
+            <ExamReviewPanel
+              paper={examPaper}
+              loadingQuestionIds={reviewingQuestionIds}
+              onReviewAction={onReviewExamQuestion}
+            />
+          ) : null}
+
           <ResearchResults
             orderedData={orderedData.filter(data => {
               // Keep everything except chat responses

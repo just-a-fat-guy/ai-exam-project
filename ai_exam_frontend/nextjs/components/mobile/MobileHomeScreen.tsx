@@ -3,28 +3,24 @@ import { ResearchHistoryItem } from '@/types/data';
 import { useResearchHistoryContext } from '@/hooks/ResearchHistoryContext';
 import LoadingDots from '@/components/LoadingDots';
 import { toast } from "react-hot-toast";
+import ExamRequestForm from '@/components/Exam/ExamRequestForm';
+import { ExamRequestDraft } from '@/types/exam';
 
 interface MobileHomeScreenProps {
-  promptValue: string;
-  setPromptValue: React.Dispatch<React.SetStateAction<string>>;
-  handleDisplayResult: (newQuestion: string) => Promise<void>;
+  examDraft: ExamRequestDraft;
+  setExamDraft: React.Dispatch<React.SetStateAction<ExamRequestDraft>>;
+  handleValidateExamRequest: () => Promise<void>;
   isLoading?: boolean;
-  placeholder?: string;
-  handleKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }
 
 export default function MobileHomeScreen({
-  promptValue,
-  setPromptValue,
-  handleDisplayResult,
+  examDraft,
+  setExamDraft,
+  handleValidateExamRequest,
   isLoading = false,
-  placeholder = "今天你想研究什么？",
-  handleKeyDown
 }: MobileHomeScreenProps) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { history } = useResearchHistoryContext();
   const [recentHistory, setRecentHistory] = useState<ResearchHistoryItem[]>([]);
-  const [isFocused, setIsFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -35,14 +31,6 @@ export default function MobileHomeScreen({
       setRecentHistory(history.slice(0, 3));
     }
   }, [history]);
-
-  // Auto resize textarea
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
-    }
-  }, [promptValue]);
 
   // Clean up any timeouts on unmount
   useEffect(() => {
@@ -58,13 +46,8 @@ export default function MobileHomeScreen({
     window.location.href = `/research/${id}`;
   }, []);
 
-  const handlePromptChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setPromptValue(e.target.value);
-  }, [setPromptValue]);
-
   const handleSubmit = useCallback(async () => {
-    // Don't submit if empty, already loading, or already submitting
-    if (!promptValue.trim() || isLoading || isSubmitting) {
+    if (!examDraft.paper_title.trim() || isLoading || isSubmitting) {
       return;
     }
     
@@ -81,13 +64,8 @@ export default function MobileHomeScreen({
         });
       }, 15000); // 15 second timeout
       
-      // Create a new simplified direct API submission that won't use websockets
       try {
-        // First show visual feedback
-        const trimmedPrompt = promptValue.trim();
-        
-        // Call the display result handler from props
-        await handleDisplayResult(trimmedPrompt);
+        await handleValidateExamRequest();
         
         // Clear the timeout since we successfully completed
         if (submissionTimeoutRef.current) {
@@ -115,20 +93,7 @@ export default function MobileHomeScreen({
         submissionTimeoutRef.current = null;
       }
     }
-  }, [promptValue, isLoading, isSubmitting, handleDisplayResult]);
-
-  // Handle enter key for submission
-  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (handleKeyDown) {
-      handleKeyDown(e);
-    }
-    
-    // Submit on Enter (without shift)
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSubmit();
-    }
-  }, [handleKeyDown, handleSubmit]);
+  }, [examDraft.paper_title, isLoading, isSubmitting, handleValidateExamRequest]);
 
   return (
     <div className="flex flex-col h-full w-full bg-gradient-to-b from-gray-900 to-gray-950 pb-16">
@@ -137,59 +102,23 @@ export default function MobileHomeScreen({
         <div className="flex justify-center mb-3">
           <img
             src="/img/gptr-logo.png"
-            alt="GPT Researcher"
+            alt="AI Exam"
             width={60}
             height={60}
             className="rounded-xl"
           />
         </div>
-        <p className="text-gray-400 text-sm">你好，GPT Researcher 是你的 AI 研究伙伴，可快速生成带来源的研究结果。</p>
+        <p className="text-gray-400 text-sm">这一页不再提交研究问题，而是提交结构化的组卷请求并调用后端验证。</p>
       </div>
 
-      {/* Search Box */}
+      {/* Exam request form */}
       <div className="px-4 md:px-8 w-full max-w-lg mx-auto">
-        <div 
-          className={`relative bg-gray-800 border ${isFocused ? 'border-sky-500/70 input-glow-active' : 'border-gray-700/50 input-glow-subtle'} rounded-xl shadow-lg transition-all duration-300`}
-        >
-          <textarea
-            ref={textareaRef}
-            className="w-full bg-transparent text-gray-200 px-4 pt-4 pb-12 focus:outline-none resize-none rounded-xl"
-            placeholder={placeholder}
-            value={promptValue}
-            onChange={handlePromptChange}
-            onKeyDown={handleKeyPress}
-            rows={1}
-            onFocus={() => setIsFocused(true)}
-            onBlur={() => setIsFocused(false)}
-            disabled={isLoading || isSubmitting}
-          />
-          
-          <div className="absolute bottom-3 right-3">
-            <button
-              onClick={handleSubmit}
-              disabled={isLoading || isSubmitting || !promptValue.trim()}
-              className={`rounded-full p-2 ${
-                isLoading || isSubmitting || !promptValue.trim() 
-                  ? 'bg-gray-700 text-gray-500' 
-                  : 'bg-sky-600 text-white hover:bg-sky-500'
-              } transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-opacity-50`}
-              aria-label="开始研究"
-            >
-              {isLoading || isSubmitting ? (
-                <div className="flex justify-center items-center">
-                  <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
-                </div>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              )}
-            </button>
-          </div>
-        </div>
-        <p className="text-xs text-gray-500 mt-2 text-center px-2">
-          输入任意研究主题或具体问题
-        </p>
+        <ExamRequestForm
+          draft={examDraft}
+          setDraft={setExamDraft}
+          onSubmit={handleSubmit}
+          disabled={isLoading || isSubmitting}
+        />
       </div>
 
       {/* Recent research history */}
@@ -224,19 +153,19 @@ export default function MobileHomeScreen({
       {/* Features or tips section */}
       <div className="mt-auto pb-6 pt-8 px-4">
         <div className="bg-gray-800/40 border border-gray-700/50 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-gray-300 mb-2">研究提示</h3>
+          <h3 className="text-sm font-medium text-gray-300 mb-2">组卷提示</h3>
           <ul className="text-xs text-gray-400 space-y-1.5">
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>问题越具体，研究结果通常越好</span>
+              <span>标题、学科、年级、题型和分值越明确，后端越容易校验通过</span>
             </li>
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>尽量补充日期、背景和限定条件</span>
+              <span>如果是纯题库模式，记得补充题库 ID 范围</span>
             </li>
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>报告生成后继续追问，能得到更深入的洞察</span>
+              <span>如果总分或题量填不自洽，验证接口会直接返回结构性错误</span>
             </li>
           </ul>
         </div>

@@ -43,7 +43,7 @@ export default function Report({ answer, researchId }: { answer: string, researc
                 <div className="text-[11px] uppercase tracking-[0.24em] text-white/34">
                   最终输出
                 </div>
-                <h3 className="text-sm font-medium text-white/84">研究报告</h3>
+                <h3 className="text-sm font-medium text-white/84">结果内容</h3>
               </div>
             </div>
             {answer && (

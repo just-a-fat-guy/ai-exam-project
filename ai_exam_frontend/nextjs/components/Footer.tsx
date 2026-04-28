@@ -26,7 +26,7 @@ const Footer: React.FC<FooterProps> = ({
   return (
     <div className="apple-panel mx-auto flex w-full max-w-[1220px] flex-col items-center justify-between gap-4 rounded-[28px] border-white/8 px-5 py-5 sm:flex-row sm:px-6">
       <div className="order-2 text-center text-xs uppercase tracking-[0.2em] text-white/36 sm:order-1 sm:text-left">
-        © {new Date().getFullYear()} GPT Researcher
+        © {new Date().getFullYear()} AI Exam Project
       </div>
 
       <div className="order-1 sm:order-2">

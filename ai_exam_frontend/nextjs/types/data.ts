@@ -7,6 +7,20 @@ export interface BasicData extends BaseData {
   content: string;
 }
 
+export interface ReportStreamData extends BaseData {
+  type: 'report';
+  output: string;
+  content?: string;
+  metadata?: any;
+}
+
+export interface ReportCompleteData extends BaseData {
+  type: 'report_complete';
+  output: string;
+  content?: string;
+  metadata?: any;
+}
+
 export interface LanggraphButtonData extends BaseData {
   type: 'langgraphButton';
   link: string;
@@ -29,7 +43,30 @@ export interface ChatData extends BaseData {
   metadata?: any; // For storing search results and other contextual information
 }
 
-export type Data = BasicData | LanggraphButtonData | DifferencesData | QuestionData | ChatData;
+export interface LogData extends BaseData {
+  type: 'logs';
+  content: string;
+  output: any;
+  metadata?: any;
+}
+
+export interface PathData extends BaseData {
+  type: 'path';
+  output: any;
+  content?: string;
+  metadata?: any;
+}
+
+export type Data =
+  | BasicData
+  | ReportStreamData
+  | ReportCompleteData
+  | LanggraphButtonData
+  | DifferencesData
+  | QuestionData
+  | ChatData
+  | LogData
+  | PathData;
 
 export interface MCPConfig {
   name: string;
@@ -39,6 +76,7 @@ export interface MCPConfig {
 }
 
 export interface ChatBoxSettings {
+  workflow_mode?: string;
   report_type: string;
   report_source: string;
   tone: string;
@@ -48,6 +86,10 @@ export interface ChatBoxSettings {
   mcp_enabled: boolean;
   mcp_configs: MCPConfig[];
   mcp_strategy?: string;
+  generation_mode?: string;
+  include_answers?: boolean;
+  include_explanations?: boolean;
+  output_formats?: string[];
 }
 
 export interface Domain {

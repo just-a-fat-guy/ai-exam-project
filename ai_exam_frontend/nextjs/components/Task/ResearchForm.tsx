@@ -1,178 +1,134 @@
-import React, { useState, useEffect } from "react";
-import FileUpload from "../Settings/FileUpload";
-import ToneSelector from "../Settings/ToneSelector";
-import MCPSelector from "../Settings/MCPSelector";
+import React from "react";
 import LayoutSelector from "../Settings/LayoutSelector";
-import DomainFilter from "./DomainFilter";
-import { useAnalytics } from "../../hooks/useAnalytics";
-import { ChatBoxSettings, Domain, MCPConfig } from '@/types/data';
+import { ChatBoxSettings } from "@/types/data";
 
 interface ResearchFormProps {
   chatBoxSettings: ChatBoxSettings;
   setChatBoxSettings: React.Dispatch<React.SetStateAction<ChatBoxSettings>>;
-  onFormSubmit?: (
-    task: string,
-    reportType: string,
-    reportSource: string,
-    domains: Domain[]
-  ) => void;
 }
+
+const outputFormatOptions = [
+  { value: "json", label: "JSON" },
+  { value: "docx", label: "DOCX" },
+  { value: "pdf", label: "PDF" },
+];
 
 export default function ResearchForm({
   chatBoxSettings,
   setChatBoxSettings,
-  onFormSubmit,
 }: ResearchFormProps) {
-  const { trackResearchQuery } = useAnalytics();
-  const [task, setTask] = useState("");
-  const [newDomain, setNewDomain] = useState('');
+  const {
+    generation_mode = "hybrid",
+    include_answers = true,
+    include_explanations = true,
+    output_formats = ["json", "docx"],
+    layoutType = "research",
+  } = chatBoxSettings;
 
-  // Destructure necessary fields from chatBoxSettings
-  let { report_type, report_source, tone, layoutType } = chatBoxSettings;
-
-  const [domains, setDomains] = useState<Domain[]>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('domainFilters');
-      return saved ? JSON.parse(saved) : [];
-    }
-    return [];
-  });
-  
-  useEffect(() => {
-    localStorage.setItem('domainFilters', JSON.stringify(domains));
-    setChatBoxSettings(prev => ({
-      ...prev,
-      domains: domains.map(domain => domain.value)
-    }));
-  }, [domains, setChatBoxSettings]);
-
-  const handleAddDomain = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newDomain.trim()) {
-      setDomains([...domains, { value: newDomain.trim() }]);
-      setNewDomain('');
-    }
-  };
-
-  const handleRemoveDomain = (domainToRemove: string) => {
-    setDomains(domains.filter(domain => domain.value !== domainToRemove));
-  };
-
-  const onFormChange = (e: { target: { name: any; value: any } }) => {
-    const { name, value } = e.target;
-    setChatBoxSettings((prevSettings: any) => ({
+  const onFieldChange = (name: keyof ChatBoxSettings, value: any) => {
+    setChatBoxSettings((prevSettings) => ({
       ...prevSettings,
       [name]: value,
     }));
   };
 
-  const onToneChange = (e: { target: { value: any } }) => {
-    const { value } = e.target;
-    setChatBoxSettings((prevSettings: any) => ({
-      ...prevSettings,
-      tone: value,
-    }));
-  };
-
   const onLayoutChange = (e: { target: { value: any } }) => {
-    const { value } = e.target;
-    setChatBoxSettings((prevSettings: any) => ({
-      ...prevSettings,
-      layoutType: value,
-    }));
+    onFieldChange("layoutType", e.target.value);
   };
 
-  const onMCPChange = (enabled: boolean, configs: MCPConfig[]) => {
-    setChatBoxSettings((prevSettings: any) => ({
-      ...prevSettings,
-      mcp_enabled: enabled,
-      mcp_configs: configs,
-    }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (onFormSubmit) {
-      const updatedSettings = {
-        ...chatBoxSettings,
-        domains: domains.map(domain => domain.value)
-      };
-      setChatBoxSettings(updatedSettings);
-      onFormSubmit(task, report_type, report_source, domains);
+  const toggleOutputFormat = (format: string) => {
+    const currentFormats = new Set(output_formats);
+    if (currentFormats.has(format)) {
+      currentFormats.delete(format);
+    } else {
+      currentFormats.add(format);
     }
+
+    const normalizedFormats = Array.from(currentFormats);
+    onFieldChange("output_formats", normalizedFormats.length > 0 ? normalizedFormats : ["json"]);
   };
 
   return (
-    <form
-      method="POST"
-      className="report_settings_static mt-3"
-      onSubmit={handleSubmit}
-    >
-      <div className="form-group">
-        <label htmlFor="report_type" className="agent_question">
-          报告类型{" "}
-        </label>
-        <select
-          name="report_type"
-          value={report_type}
-          onChange={onFormChange}
-          className="form-control-static"
-          required
-        >
-          <option value="research_report">
-            简要研究报告 - 更快完成（约 2 分钟）
-          </option>
-          <option value="deep">深度研究报告</option>
-          <option value="multi_agents">多智能体报告</option>
-          <option value="detailed_report">
-            详细研究报告 - 更深入更完整（约 5 分钟）
-          </option>
-        </select>
+    <div className="space-y-5">
+      <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
+        <div className="mb-4">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-white/34">
+            Workflow
+          </div>
+          <div className="mt-1 text-sm font-medium text-white/84">AI 组卷偏好</div>
+        </div>
+
+        <div className="space-y-4">
+          <label className="block">
+            <div className="mb-2 text-xs uppercase tracking-[0.18em] text-white/36">组卷模式</div>
+            <select
+              value={generation_mode}
+              onChange={(event) => onFieldChange("generation_mode", event.target.value)}
+              className="w-full rounded-[16px] border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white outline-none"
+            >
+              <option value="hybrid" className="bg-[#111214] text-white">
+                混合组卷
+              </option>
+              <option value="question_bank_only" className="bg-[#111214] text-white">
+                仅题库抽题
+              </option>
+              <option value="ai_generate_only" className="bg-[#111214] text-white">
+                仅 AI 出题
+              </option>
+            </select>
+          </label>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex items-start gap-3 rounded-[18px] border border-white/8 px-4 py-3 text-sm text-white/74">
+              <input
+                type="checkbox"
+                checked={include_answers}
+                onChange={(event) => onFieldChange("include_answers", event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent"
+              />
+              <div>
+                <div className="font-medium text-white/86">要求答案</div>
+                <div className="mt-1 text-xs text-white/44">后续正式组卷时要求返回标准答案。</div>
+              </div>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-[18px] border border-white/8 px-4 py-3 text-sm text-white/74">
+              <input
+                type="checkbox"
+                checked={include_explanations}
+                onChange={(event) => onFieldChange("include_explanations", event.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-white/20 bg-transparent"
+              />
+              <div>
+                <div className="font-medium text-white/86">要求解析</div>
+                <div className="mt-1 text-xs text-white/44">后续正式组卷时要求同时给出题目解析。</div>
+              </div>
+            </label>
+          </div>
+
+          <div>
+            <div className="mb-2 text-xs uppercase tracking-[0.18em] text-white/36">输出格式</div>
+            <div className="flex flex-wrap gap-3">
+              {outputFormatOptions.map((option) => (
+                <label
+                  key={option.value}
+                  className="flex items-center gap-2 rounded-full border border-white/8 px-4 py-2 text-sm text-white/74"
+                >
+                  <input
+                    type="checkbox"
+                    checked={output_formats.includes(option.value)}
+                    onChange={() => toggleOutputFormat(option.value)}
+                    className="h-4 w-4 rounded border-white/20 bg-transparent"
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="form-group">
-        <label htmlFor="report_source" className="agent_question">
-          报告来源{" "}
-        </label>
-        <select
-          name="report_source"
-          value={report_source}
-          onChange={onFormChange}
-          className="form-control-static"
-          required
-        >
-          <option value="web">互联网</option>
-          <option value="local">我的文档</option>
-          <option value="hybrid">混合模式</option>
-        </select>
-      </div>
-
-      
-
-      {report_source === "local" || report_source === "hybrid" ? (
-        <FileUpload />
-      ) : null}
-      
-      <ToneSelector tone={tone} onToneChange={onToneChange} />
-
-      <MCPSelector 
-        mcpEnabled={chatBoxSettings.mcp_enabled || false}
-        mcpConfigs={chatBoxSettings.mcp_configs || []}
-        onMCPChange={onMCPChange}
-      />
-      
-      <LayoutSelector layoutType={layoutType || 'copilot'} onLayoutChange={onLayoutChange} />
-
-      {/** TODO: move the below to its own component */}
-      {(chatBoxSettings.report_source === "web" || chatBoxSettings.report_source === "hybrid") && (
-        <DomainFilter
-          domains={domains}
-          newDomain={newDomain}
-          setNewDomain={setNewDomain}
-          onAddDomain={handleAddDomain}
-          onRemoveDomain={handleRemoveDomain}
-        />
-      )}
-    </form>
+      <LayoutSelector layoutType={layoutType} onLayoutChange={onLayoutChange} />
+    </div>
   );
 }

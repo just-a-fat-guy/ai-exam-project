@@ -2,6 +2,7 @@ import { useRef, Dispatch, SetStateAction, useState, useCallback, useEffect } fr
 import ResearchPanel from "@/components/research/ResearchPanel";
 import CopilotPanel from "@/components/research/CopilotPanel";
 import { ChatBoxSettings, Data } from "@/types/data";
+import { ExamDraftData } from "@/types/exam";
 
 interface CopilotResearchContentProps {
   orderedData: Data[];
@@ -23,6 +24,13 @@ interface CopilotResearchContentProps {
   isProcessingChat?: boolean;
   onNewResearch?: () => void;
   toggleSidebar?: () => void;
+  examPaper?: ExamDraftData | null;
+  reviewingQuestionIds?: string[];
+  onReviewExamQuestion?: (
+    questionId: string,
+    action: "approve" | "reject" | "request_regeneration",
+    comment?: string
+  ) => Promise<boolean>;
 }
 
 export default function CopilotResearchContent({
@@ -44,9 +52,13 @@ export default function CopilotResearchContent({
   reset,
   isProcessingChat = false,
   onNewResearch,
-  toggleSidebar
+  toggleSidebar,
+  examPaper,
+  reviewingQuestionIds = [],
+  onReviewExamQuestion,
 }: CopilotResearchContentProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
   // Initialize copilot as hidden when loading
   const [isCopilotVisible, setIsCopilotVisible] = useState(false);
   const [showAnimation, setShowAnimation] = useState(false);
@@ -116,7 +128,7 @@ export default function CopilotResearchContent({
     }
     
     // Automatically open the copilot when research completes BUT only if user hasn't manually closed it
-    if (!loading && answer && !isCopilotVisible && !userClosedCopilot) {
+    if (!isExamWorkflow && !loading && answer && !isCopilotVisible && !userClosedCopilot) {
       // Add a slight delay before showing the copilot for a better UX
       const timer = setTimeout(() => {
         setIsCopilotVisible(true);
@@ -125,7 +137,7 @@ export default function CopilotResearchContent({
       
       return () => clearTimeout(timer);
     }
-  }, [loading, answer, isCopilotVisible, userClosedCopilot]);
+  }, [loading, answer, isCopilotVisible, userClosedCopilot, isExamWorkflow]);
   
   // Extract the initial question from orderedData
   const initialQuestion = orderedData.find(data => data.type === 'question');
@@ -201,9 +213,9 @@ export default function CopilotResearchContent({
       {/* Research Results Panel (Left) */}
       <div 
         ref={researchPanelRef}
-        data-panel="research"
-        className={`apple-panel-strong w-full ${isCopilotVisible ? '' : 'lg:w-full'} h-full overflow-hidden flex flex-col rounded-[30px] border-white/8 bg-white/[0.035] ${!resizingActive ? 'transition-width duration-300' : ''}`}
-        style={isCopilotVisible && !isMobile ? { width: `${researchPanelWidth}%` } : {}}
+        data-panel="task"
+        className={`apple-panel-strong w-full ${isCopilotVisible && !isExamWorkflow ? '' : 'lg:w-full'} h-full overflow-hidden flex flex-col rounded-[30px] border-white/8 bg-white/[0.035] ${!resizingActive ? 'transition-width duration-300' : ''}`}
+        style={isCopilotVisible && !isMobile && !isExamWorkflow ? { width: `${researchPanelWidth}%` } : {}}
       >
         <ResearchPanel 
           orderedData={orderedData}
@@ -218,11 +230,14 @@ export default function CopilotResearchContent({
           onNewResearch={onNewResearch}
           loading={loading}
           toggleSidebar={toggleSidebar}
+          examPaper={examPaper}
+          reviewingQuestionIds={reviewingQuestionIds}
+          onReviewExamQuestion={onReviewExamQuestion}
         />
       </div>
 
       {/* Resizer handle */}
-      {isCopilotVisible && (
+      {!isExamWorkflow && isCopilotVisible && (
         <div
           className={`hidden lg:flex flex-col items-center justify-center w-3 h-full cursor-col-resize transition-colors duration-150 z-10 ${resizingActive ? 'bg-white/10' : 'bg-transparent hover:bg-white/6'}`}
           onMouseDown={handleResizeStart}
@@ -234,7 +249,7 @@ export default function CopilotResearchContent({
       )}
       
       {/* Copilot Chat Panel (Right) */}
-      {isCopilotVisible && (
+      {!isExamWorkflow && isCopilotVisible && (
         <div 
           ref={chatPanelRef}
           data-panel="chat"
