@@ -32,12 +32,26 @@ from server.websocket_manager import run_agent
 from utils import write_md_to_word, write_md_to_pdf
 from gpt_researcher.utils.enum import Tone
 from chat.chat import ChatAgentWithMemory
-from schemas import ExamPaperDraftResult, ExamPaperRequest, ExamPaperReviewRequest, ExamPaperReviewResult
+from schemas import (
+    ExamGenerationTaskSnapshot,
+    ExamNaturalLanguageParseResult,
+    ExamNaturalLanguageRequest,
+    ExamPaperDraftResult,
+    ExamPaperRequest,
+    ExamTeacherFeedbackRequest,
+    ExamTeacherFeedbackResult,
+    ExamPaperReviewRequest,
+    ExamPaperReviewResult,
+)
 from services import (
+    apply_teacher_feedback_with_llm,
     apply_exam_review_actions,
     build_exam_paper_schema_error_result,
     build_exam_paper_preview,
+    exam_generation_task_manager,
     generate_exam_preview_paper,
+    plan_exam_from_natural_request,
+    parse_natural_exam_request,
     validate_exam_paper_request_model,
 )
 
@@ -272,6 +286,37 @@ async def get_exam_paper_request_schema():
     return {"schema": ExamPaperRequest.model_json_schema()}
 
 
+@app.post("/api/exam-papers/parse-natural-request", response_model=ExamNaturalLanguageParseResult)
+async def parse_exam_paper_natural_request(payload: Dict[str, Any]):
+    """把自然语言组卷需求解析成标准组卷请求。
+
+    当前入口优先走 LLM 规划，让“模糊需求 -> 结构化组卷计划”尽量由模型决定。
+    如果 LLM 规划失败，再退回规则模板兜底。
+    """
+
+    try:
+        natural_request = ExamNaturalLanguageRequest.model_validate(payload)
+    except ValidationError as exc:
+        return ExamNaturalLanguageParseResult(
+            valid=False,
+            task_summary=(payload or {}).get("user_request", "") if isinstance(payload, dict) else "",
+            assumptions=[],
+            extracted={},
+            exam_request=None,
+            errors=[
+                {
+                    "level": "error",
+                    "code": "schema_validation_error",
+                    "message": error.get("msg", "自然语言组卷请求结构校验失败。"),
+                    "path": ".".join(str(part) for part in error.get("loc", ())) or "root",
+                }
+                for error in exc.errors()
+            ],
+        )
+
+    return await plan_exam_from_natural_request(natural_request)
+
+
 @app.post("/api/exam-papers/validate")
 async def validate_exam_paper_request(payload: Dict[str, Any]):
     """校验 AI 组卷请求。
@@ -373,6 +418,39 @@ async def generate_preview_exam_paper(payload: Dict[str, Any]):
     )
 
 
+@app.post("/api/exam-papers/tasks", response_model=ExamGenerationTaskSnapshot)
+async def create_exam_paper_generation_task(payload: Dict[str, Any]):
+    """创建后台异步组卷任务。"""
+
+    try:
+        exam_request = ExamPaperRequest.model_validate(payload)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=build_exam_paper_schema_error_result(exc.errors()),
+        ) from exc
+
+    validation_result = validate_exam_paper_request_model(exam_request)
+    if not validation_result["valid"]:
+        raise HTTPException(status_code=400, detail=validation_result)
+
+    return await exam_generation_task_manager.create_task(
+        exam_request,
+        validation_result,
+        task_summary=exam_request.paper_title,
+    )
+
+
+@app.get("/api/exam-papers/tasks/{task_id}", response_model=ExamGenerationTaskSnapshot)
+async def get_exam_paper_generation_task(task_id: str):
+    """查询后台组卷任务状态。"""
+
+    snapshot = await exam_generation_task_manager.get_task(task_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Exam generation task not found")
+    return snapshot
+
+
 @app.post("/api/exam-papers/review-actions", response_model=ExamPaperReviewResult)
 async def review_exam_paper_actions(payload: Dict[str, Any]):
     """应用人工审核动作。
@@ -404,6 +482,39 @@ async def review_exam_paper_actions(payload: Dict[str, Any]):
         )
 
     return await apply_exam_review_actions(review_request)
+
+
+@app.post("/api/exam-papers/apply-teacher-feedback", response_model=ExamTeacherFeedbackResult)
+async def apply_exam_teacher_feedback(payload: Dict[str, Any]):
+    """把教师对整卷的自然语言反馈交给 LLM 决策，再执行落地动作。
+
+    这条链路比“点单题按钮”更像 agent：
+    1. 老师只说模糊反馈
+    2. LLM 决定该改哪些题、改成什么方向
+    3. 再复用现有审核 / 重生成链路执行
+    """
+
+    try:
+        feedback_request = ExamTeacherFeedbackRequest.model_validate(payload)
+    except ValidationError as exc:
+        return ExamTeacherFeedbackResult(
+            valid=False,
+            summary="",
+            planned_actions=[],
+            errors=[
+                {
+                    "level": "error",
+                    "code": "schema_validation_error",
+                    "message": error.get("msg", "教师反馈请求结构校验失败。"),
+                    "path": ".".join(str(part) for part in error.get("loc", ())) or "root",
+                }
+                for error in exc.errors()
+            ],
+            warnings=[],
+            paper=None,
+        )
+
+    return await apply_teacher_feedback_with_llm(feedback_request)
 
 
 @app.post("/api/reports/{research_id}/chat")

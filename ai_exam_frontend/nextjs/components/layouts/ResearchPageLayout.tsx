@@ -17,6 +17,9 @@ interface ResearchPageLayoutProps {
   showScrollButton?: boolean;
   onScrollToBottom?: () => void;
   toastOptions?: object;
+  hideResultAction?: boolean;
+  lockViewport?: boolean;
+  shiftHeaderForSidebar?: boolean;
 }
 
 export default function ResearchPageLayout({
@@ -31,13 +34,17 @@ export default function ResearchPageLayout({
   mainContentRef,
   showScrollButton = false,
   onScrollToBottom,
-  toastOptions = {}
+  toastOptions = {},
+  hideResultAction = false,
+  lockViewport = false,
+  shiftHeaderForSidebar = false,
 }: ResearchPageLayoutProps) {
   const defaultRef = useRef<HTMLDivElement>(null);
   const contentRef = mainContentRef || defaultRef;
+  const shouldLockViewport = lockViewport || (hideResultAction && showResult);
 
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden text-white">
+    <main className={`relative flex flex-col overflow-hidden text-white ${shouldLockViewport ? "h-screen" : "min-h-screen"}`}>
       <Toaster 
         position="bottom-center" 
         toastOptions={toastOptions}
@@ -56,11 +63,13 @@ export default function ResearchPageLayout({
         showResult={showResult}
         onStop={onStop || (() => {})}
         onNewResearch={onNewResearch}
+        hideResultAction={hideResultAction}
+        shiftForSidebar={shiftHeaderForSidebar}
       />
       
       <div 
         ref={contentRef}
-        className="relative z-10 min-h-[100vh] pt-[104px]"
+        className={`relative z-10 ${shouldLockViewport ? "h-screen overflow-hidden pt-[104px]" : "min-h-[100vh] pt-[104px]"}`}
       >
         {children}
       </div>
@@ -87,9 +96,11 @@ export default function ResearchPageLayout({
         </button>
       )}
       
-      <div className="relative z-10 px-4 pb-4 lg:px-8">
-        <Footer setChatBoxSettings={setChatBoxSettings} chatBoxSettings={chatBoxSettings} />
-      </div>
+      {!shouldLockViewport ? (
+        <div className="relative z-10 px-4 pb-4 lg:px-8">
+          <Footer setChatBoxSettings={setChatBoxSettings} chatBoxSettings={chatBoxSettings} />
+        </div>
+      ) : null}
     </main>
   );
 }

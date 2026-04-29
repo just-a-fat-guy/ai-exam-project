@@ -6,6 +6,7 @@ import LoadingDots from "@/components/LoadingDots";
 import { ChatBoxSettings, Data } from "@/types/data";
 import { ExamDraftData } from "@/types/exam";
 import ExamReviewPanel from "@/components/Exam/ExamReviewPanel";
+import ExamConversationWorkspace from "@/components/Exam/ExamConversationWorkspace";
 
 interface ResearchContentProps {
   showResult: boolean;
@@ -30,11 +31,22 @@ interface ResearchContentProps {
   bottomRef?: React.RefObject<HTMLDivElement>;
   examPaper?: ExamDraftData | null;
   reviewingQuestionIds?: string[];
+  applyingTeacherFeedback?: boolean;
   onReviewExamQuestion?: (
     questionId: string,
     action: "approve" | "reject" | "request_regeneration",
     comment?: string
   ) => Promise<boolean>;
+  onApplyTeacherFeedback?: (feedback: string) => Promise<boolean>;
+  onNewConversation?: () => void;
+  onGoHome?: () => void;
+  activeTaskSummary?: string;
+  activeLogs?: Array<{
+    header: string;
+    text: string;
+    metadata?: Record<string, unknown>;
+    key: string;
+  }>;
 }
 
 export default function ResearchContent({
@@ -60,12 +72,43 @@ export default function ResearchContent({
   bottomRef,
   examPaper,
   reviewingQuestionIds = [],
+  applyingTeacherFeedback = false,
   onReviewExamQuestion,
+  onApplyTeacherFeedback,
+  onNewConversation,
+  onGoHome,
+  activeTaskSummary = "",
+  activeLogs = [],
 }: ResearchContentProps) {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const internalBottomRef = useRef<HTMLDivElement>(null);
   const finalBottomRef = bottomRef || internalBottomRef;
   const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
+
+  if (isExamWorkflow) {
+    return (
+      <ExamConversationWorkspace
+        question={orderedData.find((item) => item.type === "question")?.content || ""}
+        orderedData={orderedData}
+        answer={answer}
+        allLogs={allLogs}
+        examPaper={examPaper}
+        chatPromptValue={chatPromptValue}
+        setChatPromptValue={setChatPromptValue}
+        onSubmit={handleChat}
+        loading={loading}
+        isProcessingChat={isProcessingChat}
+        reviewingQuestionIds={reviewingQuestionIds}
+        applyingTeacherFeedback={applyingTeacherFeedback}
+        onReviewExamQuestion={onReviewExamQuestion}
+        onApplyTeacherFeedback={onApplyTeacherFeedback}
+        onNewConversation={onNewConversation || (() => {})}
+        onGoHome={onGoHome || (() => {})}
+        activeTaskSummary={activeTaskSummary}
+        activeLogs={activeLogs}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full w-full grow flex-col justify-between">
@@ -89,7 +132,9 @@ export default function ResearchContent({
             <ExamReviewPanel
               paper={examPaper}
               loadingQuestionIds={reviewingQuestionIds}
+              teacherFeedbackLoading={applyingTeacherFeedback}
               onReviewAction={onReviewExamQuestion}
+              onApplyTeacherFeedback={onApplyTeacherFeedback}
             />
           ) : null}
 

@@ -81,7 +81,7 @@ const ChatMessage = memo(({
       <div className="flex flex-col space-y-2 py-1 max-w-full animate-fade-in">
         <div className="flex items-start space-x-2">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0 shadow-md">
-            <img src="/img/gptr-logo.png" alt="AI" className="w-6 h-6" />
+            <img src="/img/ai-exam-icon.svg" alt="AI" className="w-6 h-6" />
           </div>
           <div className="flex-1 ai-message-bubble rounded-2xl px-4 py-3 text-sm text-white mr-4 shadow-lg">
             <div className="markdown-content prose prose-sm prose-invert max-w-none">
@@ -404,7 +404,7 @@ const MobileChatPanel: React.FC<MobileChatPanelProps> = ({
         {showIntroMessage && !loading && (
           <div className="flex items-start space-x-2 py-2 animate-fade-in">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0 shadow-md">
-              <img src="/img/gptr-logo.png" alt="AI" className="w-6 h-6" />
+              <img src="/img/ai-exam-icon.svg" alt="AI" className="w-6 h-6" />
             </div>
             <div className="flex-1 ai-message-bubble rounded-2xl p-4 text-sm text-white shadow-lg">
               <p>你好，我是你的研究助手。输入问题后，我会帮你检索信息并整理出关键结论。</p>
@@ -416,7 +416,7 @@ const MobileChatPanel: React.FC<MobileChatPanelProps> = ({
         {loading && renderedMessages.length === 0 && (
           <div className="flex items-start space-x-2 py-2 animate-fade-in">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0 shadow-md">
-              <img src="/img/gptr-logo.png" alt="AI" className="w-6 h-6" />
+              <img src="/img/ai-exam-icon.svg" alt="AI" className="w-6 h-6" />
             </div>
             <div className="flex-1 ai-message-bubble rounded-2xl p-4 text-sm text-white shadow-lg">
               <p>我正在研究你的问题，这可能需要一点时间……</p>
@@ -442,7 +442,7 @@ const MobileChatPanel: React.FC<MobileChatPanelProps> = ({
         {isProcessingChat && (
           <div className="flex items-start space-x-2 py-1 animate-fade-in">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center flex-shrink-0 shadow-md">
-              <img src="/img/gptr-logo.png" alt="AI" className="w-6 h-6" />
+              <img src="/img/ai-exam-icon.svg" alt="AI" className="w-6 h-6" />
             </div>
             <div className="flex-1 ai-message-bubble rounded-2xl px-4 py-3 text-white">
               <div className="flex space-x-2">

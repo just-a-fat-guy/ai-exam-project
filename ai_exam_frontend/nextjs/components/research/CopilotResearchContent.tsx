@@ -3,6 +3,7 @@ import ResearchPanel from "@/components/research/ResearchPanel";
 import CopilotPanel from "@/components/research/CopilotPanel";
 import { ChatBoxSettings, Data } from "@/types/data";
 import { ExamDraftData } from "@/types/exam";
+import ExamConversationWorkspace from "@/components/Exam/ExamConversationWorkspace";
 
 interface CopilotResearchContentProps {
   orderedData: Data[];
@@ -26,11 +27,21 @@ interface CopilotResearchContentProps {
   toggleSidebar?: () => void;
   examPaper?: ExamDraftData | null;
   reviewingQuestionIds?: string[];
+  applyingTeacherFeedback?: boolean;
   onReviewExamQuestion?: (
     questionId: string,
     action: "approve" | "reject" | "request_regeneration",
     comment?: string
   ) => Promise<boolean>;
+  onApplyTeacherFeedback?: (feedback: string) => Promise<boolean>;
+  onGoHome?: () => void;
+  activeTaskSummary?: string;
+  activeLogs?: Array<{
+    header: string;
+    text: string;
+    metadata?: Record<string, unknown>;
+    key: string;
+  }>;
 }
 
 export default function CopilotResearchContent({
@@ -55,7 +66,12 @@ export default function CopilotResearchContent({
   toggleSidebar,
   examPaper,
   reviewingQuestionIds = [],
+  applyingTeacherFeedback = false,
   onReviewExamQuestion,
+  onApplyTeacherFeedback,
+  onGoHome,
+  activeTaskSummary = "",
+  activeLogs = [],
 }: CopilotResearchContentProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
@@ -203,6 +219,33 @@ export default function CopilotResearchContent({
     };
   }, [resizingActive]);
 
+  // 组卷模式统一走 GPT 风格的对话工作区。
+  if (isExamWorkflow) {
+    return (
+      <ExamConversationWorkspace
+        question={questionText}
+        orderedData={orderedData}
+        answer={answer}
+        allLogs={allLogs}
+        examPaper={examPaper}
+        chatPromptValue={chatPromptValue}
+        setChatPromptValue={setChatPromptValue}
+        onSubmit={handleChat}
+        loading={loading}
+        isProcessingChat={isProcessingChat}
+        reviewingQuestionIds={reviewingQuestionIds}
+        applyingTeacherFeedback={applyingTeacherFeedback}
+        onReviewExamQuestion={onReviewExamQuestion}
+        onApplyTeacherFeedback={onApplyTeacherFeedback}
+        onNewConversation={onNewResearch || (() => {})}
+        onGoHome={onGoHome || (() => {})}
+        activeTaskSummary={activeTaskSummary}
+        activeLogs={activeLogs}
+      />
+    );
+  }
+
+  // 原有研究模式保持左右分栏布局
   return (
     <div 
       ref={containerRef}
@@ -232,7 +275,9 @@ export default function CopilotResearchContent({
           toggleSidebar={toggleSidebar}
           examPaper={examPaper}
           reviewingQuestionIds={reviewingQuestionIds}
+          applyingTeacherFeedback={applyingTeacherFeedback}
           onReviewExamQuestion={onReviewExamQuestion}
+          onApplyTeacherFeedback={onApplyTeacherFeedback}
         />
       </div>
 

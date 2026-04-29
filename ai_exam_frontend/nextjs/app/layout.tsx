@@ -22,6 +22,7 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   icons: {
     icon: "/img/ai-exam-icon.svg",
+    shortcut: "/img/ai-exam-icon.svg",
     apple: '/img/ai-exam-icon.svg',
   },
   appleWebApp: {
@@ -67,6 +68,8 @@ export default function RootLayout({
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID!} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <link rel="icon" href="/img/ai-exam-icon.svg" type="image/svg+xml" />
+        <link rel="shortcut icon" href="/img/ai-exam-icon.svg" />
         <link rel="apple-touch-icon" href="/img/ai-exam-icon.svg" />
       </head>
       <body

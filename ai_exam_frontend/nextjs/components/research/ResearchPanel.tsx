@@ -21,11 +21,13 @@ interface ResearchPanelProps {
   toggleSidebar?: () => void;
   examPaper?: ExamDraftData | null;
   reviewingQuestionIds?: string[];
+  applyingTeacherFeedback?: boolean;
   onReviewExamQuestion?: (
     questionId: string,
     action: "approve" | "reject" | "request_regeneration",
     comment?: string
   ) => Promise<boolean>;
+  onApplyTeacherFeedback?: (feedback: string) => Promise<boolean>;
 }
 
 const ResearchPanel: React.FC<ResearchPanelProps> = ({
@@ -43,7 +45,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
   toggleSidebar,
   examPaper,
   reviewingQuestionIds = [],
+  applyingTeacherFeedback = false,
   onReviewExamQuestion,
+  onApplyTeacherFeedback,
 }) => {
   // Determine if research is complete (has answer) and copilot should be highlighted
   const researchComplete = Boolean(answer && answer.length > 0);
@@ -58,7 +62,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
         <div className="flex items-center gap-3">
           <div className="apple-panel flex h-10 w-10 items-center justify-center rounded-2xl border-white/10 bg-white/[0.05]">
             <img
-              src="/img/gptr-logo.png"
+              src="/img/ai-exam-icon.svg"
               alt="GPT Researcher"
               width={22}
               height={22}
@@ -87,7 +91,7 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
               </svg>
-              {isExamWorkflow ? "新建组卷请求" : "新建研究"}
+              {isExamWorkflow ? "新建AI组卷" : "新建研究"}
             </button>
           )}
           
@@ -128,7 +132,9 @@ const ResearchPanel: React.FC<ResearchPanelProps> = ({
             <ExamReviewPanel
               paper={examPaper}
               loadingQuestionIds={reviewingQuestionIds}
+              teacherFeedbackLoading={applyingTeacherFeedback}
               onReviewAction={onReviewExamQuestion}
+              onApplyTeacherFeedback={onApplyTeacherFeedback}
             />
           ) : null}
 

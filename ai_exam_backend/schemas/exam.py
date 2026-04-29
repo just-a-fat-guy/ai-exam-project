@@ -407,6 +407,22 @@ class ExamPaperRequest(BaseModel):
     )
 
 
+class ExamNaturalLanguageRequest(BaseModel):
+    """面向前端自然语言入口的轻量请求。"""
+
+    user_request: str = Field(..., min_length=1, description="用户自然语言组卷需求。")
+    generation_mode: PaperGenerationMode = Field(
+        default=PaperGenerationMode.AIGenerateOnly,
+        description="默认使用纯 AI 出题。",
+    )
+    include_answers: bool = Field(default=True, description="是否包含答案。")
+    include_explanations: bool = Field(default=True, description="是否包含解析。")
+    output_formats: list[str] = Field(
+        default_factory=lambda: ["json", "docx"],
+        description="期望输出格式。",
+    )
+
+
 class ExamQuestionOption(BaseModel):
     """试卷草案中的题目选项结构。"""
 
@@ -425,6 +441,29 @@ class ExamQualityIssue(BaseModel):
     code: str = Field(..., description="问题代码。")
     message: str = Field(..., description="问题说明。")
     path: str = Field(..., description="定位路径。")
+
+
+class ExamNaturalLanguageParseResult(BaseModel):
+    """自然语言组卷需求解析结果。"""
+
+    valid: bool = Field(..., description="是否成功解析成可执行组卷请求。")
+    task_summary: str = Field(..., description="给前端展示的摘要。")
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="系统自动补全时采用的默认假设。",
+    )
+    extracted: dict[str, Any] = Field(
+        default_factory=dict,
+        description="从自然语言中抽取出的关键信息。",
+    )
+    exam_request: dict[str, Any] | None = Field(
+        default=None,
+        description="补全后的标准组卷请求；失败时为空。",
+    )
+    errors: list[ExamQualityIssue] = Field(
+        default_factory=list,
+        description="解析失败时的错误列表。",
+    )
 
 
 class ExamQuestionReviewRecord(BaseModel):
@@ -595,6 +634,10 @@ class ExamPaperDraft(BaseModel):
         default_factory=dict,
         description="题目来源范围快照。",
     )
+    request_snapshot: dict[str, Any] | None = Field(
+        default=None,
+        description="生成这份草案时使用的标准 ExamPaperRequest 快照，供后续二次规划复用。",
+    )
     knowledge_points: list[dict[str, Any]] = Field(
         default_factory=list,
         description="知识点覆盖快照。",
@@ -619,6 +662,19 @@ class ExamPaperDraft(BaseModel):
         default_factory=dict,
         description="整张试卷的审核状态汇总。",
     )
+    revision_round: int = Field(
+        default=0,
+        ge=0,
+        description="教师反馈迭代轮次，从 0 开始。",
+    )
+    paper_level_guidance: list[str] = Field(
+        default_factory=list,
+        description="当前持续生效的整卷级指导，用于后续重生成和再规划。",
+    )
+    feedback_history: list["ExamTeacherFeedbackMemoryRecord"] = Field(
+        default_factory=list,
+        description="整卷级教师反馈 / agent 规划记忆历史。",
+    )
     warnings: list[dict[str, Any]] = Field(
         default_factory=list,
         description="非致命告警。",
@@ -636,6 +692,171 @@ class ExamPaperDraftResult(BaseModel):
     paper: ExamPaperDraft | None = Field(
         default=None,
         description="试卷草案；验证失败时为空。",
+    )
+
+
+class ExamGenerationTaskEvent(BaseModel):
+    """异步组卷任务的进度事件。"""
+
+    event_id: str = Field(..., description="事件 ID。")
+    timestamp: str = Field(..., description="事件时间。")
+    level: Literal["info", "warning", "error", "success"] = Field(
+        default="info",
+        description="事件级别。",
+    )
+    stage: str = Field(..., description="事件阶段标识。")
+    message: str = Field(..., description="给前端展示的进度消息。")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="事件附加元信息，例如 slot_id、题型、状态等。",
+    )
+
+
+class ExamGenerationTaskProgress(BaseModel):
+    """异步组卷任务的进度快照。"""
+
+    total_slots: int = Field(default=0, ge=0, description="总题位数。")
+    completed_slots: int = Field(default=0, ge=0, description="已处理完成的题位数。")
+    generated_slots: int = Field(default=0, ge=0, description="成功生成题位数。")
+    template_slots: int = Field(default=0, ge=0, description="模板回退题位数。")
+    pending_regeneration_slots: int = Field(default=0, ge=0, description="待重生成题位数。")
+    latest_message: str | None = Field(default=None, description="最新一条进度说明。")
+
+
+class ExamGenerationTaskSnapshot(BaseModel):
+    """异步组卷任务状态快照。"""
+
+    task_id: str = Field(..., description="任务 ID。")
+    status: Literal["queued", "running", "completed", "failed"] = Field(
+        default="queued",
+        description="任务状态。",
+    )
+    task_summary: str = Field(..., description="任务摘要。")
+    created_at: str = Field(..., description="任务创建时间。")
+    updated_at: str = Field(..., description="任务最近更新时间。")
+    progress: ExamGenerationTaskProgress = Field(
+        default_factory=ExamGenerationTaskProgress,
+        description="进度快照。",
+    )
+    events: list[ExamGenerationTaskEvent] = Field(
+        default_factory=list,
+        description="进度事件列表。",
+    )
+    validation: dict[str, Any] = Field(
+        default_factory=dict,
+        description="创建任务时的校验结果快照。",
+    )
+    paper: ExamPaperDraft | None = Field(
+        default=None,
+        description="任务完成后的试卷草案。",
+    )
+    error: str | None = Field(
+        default=None,
+        description="任务失败时的错误说明。",
+    )
+
+
+class ExamTeacherFeedbackPlannedAction(BaseModel):
+    """LLM 基于教师自然语言反馈规划出的动作。"""
+
+    question_id: str = Field(..., description="目标题目 ID。")
+    action: Literal["approve", "reject", "request_regeneration"] = Field(
+        ...,
+        description="LLM 建议执行的动作。",
+    )
+    comment: str | None = Field(
+        default=None,
+        description="动作原因或重生成指令。",
+    )
+
+
+class ExamTeacherFeedbackMemoryRecord(BaseModel):
+    """整卷级教师反馈记忆记录。"""
+
+    reviewer: str = Field(..., description="反馈人。")
+    teacher_feedback: str = Field(..., description="教师原始反馈。")
+    strategy: Literal["no_change", "question_level_edit", "section_level_regenerate", "paper_level_regenerate"] = Field(
+        ...,
+        description="LLM 对本轮反馈选择的处理策略。",
+    )
+    summary: str = Field(..., description="本轮处理摘要。")
+    target_sections: list[str] = Field(
+        default_factory=list,
+        description="本轮策略命中的 section 名称。",
+    )
+    target_question_ids: list[str] = Field(
+        default_factory=list,
+        description="本轮策略命中的 question_id 列表。",
+    )
+    paper_level_guidance: list[str] = Field(
+        default_factory=list,
+        description="沉淀下来的全卷级指导语句，供后续轮次继续参考。",
+    )
+    planned_actions: list[ExamTeacherFeedbackPlannedAction] = Field(
+        default_factory=list,
+        description="本轮计划执行的题目动作列表。",
+    )
+    timestamp: str = Field(..., description="记录时间。")
+
+
+class ExamTeacherFeedbackRequest(BaseModel):
+    """教师整卷反馈请求。
+
+    这不是“点按钮审核单题”，而是让老师用自然语言说：
+    - “整体偏难，把应用题降一点”
+    - “阅读理解第二题换一道更基础的”
+    - “作文题太开放，改成半命题”
+
+    后端再交给 LLM 决定要改哪些题、怎么改。
+    """
+
+    paper: ExamPaperDraft = Field(..., description="当前试卷草案。")
+    teacher_feedback: str = Field(..., min_length=1, description="教师的自然语言反馈。")
+    reviewer: str | None = Field(default=None, description="反馈人。")
+    max_actions: int = Field(
+        default=4,
+        ge=1,
+        le=12,
+        description="LLM 本轮最多允许规划多少个动作，避免一次改动过大。",
+    )
+
+
+class ExamTeacherFeedbackResult(BaseModel):
+    """教师整卷反馈处理结果。"""
+
+    valid: bool = Field(..., description="反馈处理是否成功。")
+    summary: str = Field(default="", description="LLM 对本轮反馈的处理摘要。")
+    strategy: Literal["no_change", "question_level_edit", "section_level_regenerate", "paper_level_regenerate"] = Field(
+        default="question_level_edit",
+        description="本轮反馈采用的处理策略。",
+    )
+    target_sections: list[str] = Field(
+        default_factory=list,
+        description="本轮策略命中的 section 名称。",
+    )
+    target_question_ids: list[str] = Field(
+        default_factory=list,
+        description="本轮策略命中的 question_id 列表。",
+    )
+    paper_level_guidance: list[str] = Field(
+        default_factory=list,
+        description="本轮反馈沉淀出的全卷指导。",
+    )
+    planned_actions: list[ExamTeacherFeedbackPlannedAction] = Field(
+        default_factory=list,
+        description="LLM 决定执行的题目动作列表。",
+    )
+    errors: list[ExamQualityIssue] = Field(
+        default_factory=list,
+        description="反馈处理级错误。",
+    )
+    warnings: list[ExamQualityIssue] = Field(
+        default_factory=list,
+        description="反馈处理级警告。",
+    )
+    paper: ExamPaperDraft | None = Field(
+        default=None,
+        description="应用反馈动作后的最新试卷草案。",
     )
 
 
@@ -683,3 +904,6 @@ class ExamPaperReviewResult(BaseModel):
         default=None,
         description="应用动作后的试卷草案。",
     )
+
+
+ExamPaperDraft.model_rebuild()

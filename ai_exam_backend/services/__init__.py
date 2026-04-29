@@ -11,16 +11,26 @@ from .exam_validation import (
     build_exam_paper_schema_error_result,
     validate_exam_paper_request_model,
 )
+from .exam_intake import parse_natural_exam_request
+from .exam_agent import (
+    apply_teacher_feedback_with_llm,
+    plan_exam_from_natural_request,
+)
 from .exam_preview import build_exam_paper_preview
 from .exam_draft import generate_exam_preview_paper
 from .exam_quality import validate_exam_draft_quality
 from .exam_review import apply_exam_review_actions
+from .exam_task_manager import exam_generation_task_manager
 
 __all__ = [
+    "apply_teacher_feedback_with_llm",
     "apply_exam_review_actions",
-    "generate_exam_preview_paper",
     "build_exam_paper_schema_error_result",
     "build_exam_paper_preview",
+    "exam_generation_task_manager",
+    "generate_exam_preview_paper",
+    "plan_exam_from_natural_request",
+    "parse_natural_exam_request",
     "validate_exam_draft_quality",
     "validate_exam_paper_request_model",
 ]

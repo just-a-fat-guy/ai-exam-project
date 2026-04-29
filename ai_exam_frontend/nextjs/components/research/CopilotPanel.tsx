@@ -81,7 +81,7 @@ const CopilotPanel: React.FC<CopilotPanelProps> = ({
         <div className="flex items-center">
           <div className="apple-panel flex h-10 w-10 items-center justify-center rounded-2xl border-white/10 bg-white/[0.05]">
             <img
-              src="/img/gptr-logo.png"
+              src="/img/ai-exam-icon.svg"
               alt="logo"
               width={22}
               height={22}

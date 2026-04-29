@@ -4,12 +4,18 @@ import { useResearchHistoryContext } from '@/hooks/ResearchHistoryContext';
 import LoadingDots from '@/components/LoadingDots';
 import { toast } from "react-hot-toast";
 import ExamRequestForm from '@/components/Exam/ExamRequestForm';
+import ExamNaturalRequestForm from '@/components/Exam/ExamNaturalRequestForm';
 import { ExamRequestDraft } from '@/types/exam';
 
 interface MobileHomeScreenProps {
   examDraft: ExamRequestDraft;
   setExamDraft: React.Dispatch<React.SetStateAction<ExamRequestDraft>>;
   handleValidateExamRequest: () => Promise<void>;
+  naturalExamRequest: string;
+  setNaturalExamRequest: React.Dispatch<React.SetStateAction<string>>;
+  handleNaturalExamRequest: () => Promise<void>;
+  showAdvancedExamForm: boolean;
+  toggleAdvancedExamForm: () => void;
   isLoading?: boolean;
 }
 
@@ -17,6 +23,11 @@ export default function MobileHomeScreen({
   examDraft,
   setExamDraft,
   handleValidateExamRequest,
+  naturalExamRequest,
+  setNaturalExamRequest,
+  handleNaturalExamRequest,
+  showAdvancedExamForm,
+  toggleAdvancedExamForm,
   isLoading = false,
 }: MobileHomeScreenProps) {
   const { history } = useResearchHistoryContext();
@@ -47,7 +58,7 @@ export default function MobileHomeScreen({
   }, []);
 
   const handleSubmit = useCallback(async () => {
-    if (!examDraft.paper_title.trim() || isLoading || isSubmitting) {
+    if (!naturalExamRequest.trim() || isLoading || isSubmitting) {
       return;
     }
     
@@ -58,14 +69,14 @@ export default function MobileHomeScreen({
       // Add a timeout as a safety measure to prevent infinite loading
       submissionTimeoutRef.current = setTimeout(() => {
         setIsSubmitting(false);
-        toast.error("研究请求耗时过长，请重试。", {
+        toast.error("组卷请求耗时过长，请重试。", {
           duration: 3000,
           position: "bottom-center"
         });
       }, 15000); // 15 second timeout
       
       try {
-        await handleValidateExamRequest();
+        await handleNaturalExamRequest();
         
         // Clear the timeout since we successfully completed
         if (submissionTimeoutRef.current) {
@@ -74,7 +85,7 @@ export default function MobileHomeScreen({
         }
       } catch (apiError) {
         console.error("API error during research submission:", apiError);
-        toast.error("提交研究任务时出现问题，请重试。", {
+        toast.error("提交组卷请求时出现问题，请重试。", {
           duration: 3000,
           position: "bottom-center"
         });
@@ -93,7 +104,7 @@ export default function MobileHomeScreen({
         submissionTimeoutRef.current = null;
       }
     }
-  }, [examDraft.paper_title, isLoading, isSubmitting, handleValidateExamRequest]);
+  }, [naturalExamRequest, isLoading, isSubmitting, handleNaturalExamRequest]);
 
   return (
     <div className="flex flex-col h-full w-full bg-gradient-to-b from-gray-900 to-gray-950 pb-16">
@@ -101,24 +112,36 @@ export default function MobileHomeScreen({
       <div className="pt-10 px-6 text-center mb-8">
         <div className="flex justify-center mb-3">
           <img
-            src="/img/gptr-logo.png"
+            src="/img/ai-exam-icon.svg"
             alt="AI Exam"
             width={60}
             height={60}
             className="rounded-xl"
           />
         </div>
-        <p className="text-gray-400 text-sm">这一页不再提交研究问题，而是提交结构化的组卷请求并调用后端验证。</p>
+        <p className="text-gray-400 text-sm">一句话描述组卷需求，系统会自动补全结构化组卷请求。</p>
       </div>
 
       {/* Exam request form */}
       <div className="px-4 md:px-8 w-full max-w-lg mx-auto">
-        <ExamRequestForm
-          draft={examDraft}
-          setDraft={setExamDraft}
-          onSubmit={handleSubmit}
-          disabled={isLoading || isSubmitting}
-        />
+        <div className="space-y-4">
+          <ExamNaturalRequestForm
+            value={naturalExamRequest}
+            onChange={setNaturalExamRequest}
+            onSubmit={handleSubmit}
+            disabled={isLoading || isSubmitting}
+            showAdvanced={showAdvancedExamForm}
+            onToggleAdvanced={toggleAdvancedExamForm}
+          />
+          {showAdvancedExamForm && (
+            <ExamRequestForm
+              draft={examDraft}
+              setDraft={setExamDraft}
+              onSubmit={handleValidateExamRequest}
+              disabled={isLoading || isSubmitting}
+            />
+          )}
+        </div>
       </div>
 
       {/* Recent research history */}
@@ -157,15 +180,15 @@ export default function MobileHomeScreen({
           <ul className="text-xs text-gray-400 space-y-1.5">
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>标题、学科、年级、题型和分值越明确，后端越容易校验通过</span>
+              <span>自然语言里至少写清学科、年级和考试类型，系统才好自动补全</span>
             </li>
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>如果是纯题库模式，记得补充题库 ID 范围</span>
+              <span>当前默认使用纯 AI 出题，不需要额外配置题库范围</span>
             </li>
             <li className="flex items-start">
               <span className="text-sky-400 mr-1.5">•</span>
-              <span>如果总分或题量填不自洽，验证接口会直接返回结构性错误</span>
+              <span>如果要细调题型、分值和 section，再展开高级参数</span>
             </li>
           </ul>
         </div>

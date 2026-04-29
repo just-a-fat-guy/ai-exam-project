@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 export const maxDuration = 600;
+export const runtime = 'nodejs';
 
 import { NextResponse } from 'next/server';
 
@@ -33,7 +34,7 @@ export async function GET(request: Request, { params }: { params: { slug: string
       next: {
         revalidate: 0
       },
-      signal: AbortSignal.timeout(600000)
+      signal: AbortSignal.timeout(600000),
     });
     
     if (!response.ok) {
@@ -48,7 +49,7 @@ export async function GET(request: Request, { params }: { params: { slug: string
     const data = await response.json();
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
-    console.error(`GET /api/exam-papers - Error proxying to backend:`, error);
+    console.error(`GET proxy error - backend endpoint ${request.url}:`, error);
     return NextResponse.json(
       { error: 'Failed to connect to backend service' },
       { status: 500 }
@@ -90,7 +91,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
       next: {
         revalidate: 0
       },
-      signal: AbortSignal.timeout(600000)
+      signal: AbortSignal.timeout(600000),
     });
     
     if (!response.ok) {
@@ -105,7 +106,9 @@ export async function POST(request: Request, { params }: { params: { slug: strin
     const data = await response.json();
     return NextResponse.json(data, { status: 200 });
   } catch (error) {
-    console.error(`POST /api/exam-papers - Error proxying to backend:`, error);
+    const slugPath = params.slug.join('/');
+    const endpoint = slugPath ? `/api/exam-papers/${slugPath}` : '/api/exam-papers';
+    console.error(`POST ${endpoint} - Error proxying to backend:`, error);
     return NextResponse.json(
       { error: 'Failed to connect to backend service' },
       { status: 500 }

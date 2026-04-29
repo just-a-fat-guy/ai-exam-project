@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useResearchHistoryContext } from '@/hooks/ResearchHistoryContext';
 import { useScrollHandler } from '@/hooks/useScrollHandler';
@@ -11,7 +10,12 @@ import { Data, ChatBoxSettings, QuestionData, ChatMessage, ChatData } from '../t
 import {
   ExamDraftData,
   ExamDraftResult,
+  ExamGenerationTaskSnapshot,
+  ExamNaturalLanguageParseResult,
+  ExamTeacherFeedbackResult,
   ExamPaperReviewResult,
+  ExamNaturalLanguageRequestPayload,
+  ExamTeacherFeedbackRequestPayload,
   ExamPaperValidatePayload,
   ExamRequestDraft,
   ExamValidationResult,
@@ -45,9 +49,9 @@ const createInitialExamDraft = (): ExamRequestDraft => ({
   total_score: "120",
   target_question_count: "22",
   knowledge_points_text: "一元二次方程\n二次函数",
-  question_bank_ids_text: "bank_math_junior",
+  question_bank_ids_text: "",
   notes_to_generator: "整体难度前易后难，避免超纲内容。",
-  generation_mode: "hybrid",
+  generation_mode: "ai_generate_only",
   sections: [
     {
       id: "section-default-1",
@@ -157,7 +161,7 @@ const buildExamPayload = (
     exclude_question_ids: [],
   },
   generation_policy: {
-    mode: (draft.generation_mode || settings.generation_mode || "hybrid") as ExamPaperValidatePayload["generation_policy"]["mode"],
+    mode: (draft.generation_mode || settings.generation_mode || "ai_generate_only") as ExamPaperValidatePayload["generation_policy"]["mode"],
     allow_question_rewrite: false,
     allow_ai_generate_missing: true,
     deduplicate_questions: true,
@@ -187,6 +191,56 @@ const buildExamTaskSummary = (draft: ExamRequestDraft) =>
   ]
     .filter(Boolean)
     .join(" | ");
+
+const payloadToExamDraft = (payload: ExamPaperValidatePayload): ExamRequestDraft => ({
+  paper_title: payload.paper_title,
+  subject: payload.subject,
+  school_stage: payload.school_stage,
+  grade: payload.grade,
+  exam_type: payload.exam_type,
+  term: payload.term || "",
+  language: payload.language || "zh-CN",
+  duration_minutes: payload.duration_minutes ? String(payload.duration_minutes) : "",
+  total_score: String(payload.total_score ?? ""),
+  target_question_count: payload.target_question_count ? String(payload.target_question_count) : "",
+  knowledge_points_text: (payload.knowledge_points || []).map((item) => item.name).join("\n"),
+  question_bank_ids_text: (payload.source_scope?.question_bank_ids || []).join("\n"),
+  notes_to_generator: payload.notes_to_generator || "",
+  generation_mode: payload.generation_policy?.mode || "ai_generate_only",
+  sections: (payload.sections || []).map((section, sectionIndex) => ({
+    id: `section-${sectionIndex + 1}-${Math.random().toString(36).slice(2, 7)}`,
+    section_name: section.section_name,
+    section_order: section.section_order ? String(section.section_order) : String(sectionIndex + 1),
+    section_score: section.section_score != null ? String(section.section_score) : "",
+    instructions: section.instructions || "",
+    question_requirements: (section.question_requirements || []).map((requirement, requirementIndex) => ({
+      id: `req-${sectionIndex + 1}-${requirementIndex + 1}-${Math.random().toString(36).slice(2, 7)}`,
+      question_type: requirement.question_type,
+      question_count: String(requirement.question_count ?? ""),
+      score_per_question: requirement.score_per_question != null ? String(requirement.score_per_question) : "",
+      total_score: requirement.total_score != null ? String(requirement.total_score) : "",
+      preferred_difficulty: requirement.preferred_difficulty || "medium",
+      knowledge_points_text: (requirement.knowledge_points || []).join("\n"),
+      allow_ai_generation: requirement.allow_ai_generation ?? true,
+    })),
+  })),
+});
+
+const prependAssumptionsMarkdown = (markdown: string, assumptions: string[]) => {
+  if (!assumptions.length) {
+    return markdown;
+  }
+
+  return [
+    "## 自动补全假设",
+    "",
+    ...assumptions.map((item) => `- ${item}`),
+    "",
+    markdown,
+  ].join("\n");
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const buildValidationMarkdown = (
   result: ExamValidationResult,
@@ -339,7 +393,50 @@ const buildDraftMarkdownFromPaper = (
     lines.push(`- 审核中题目数：${paper.review_summary?.pending_review_count ?? 0}`);
     lines.push(`- 已通过审核题目数：${paper.review_summary?.reviewed_count ?? 0}`);
     lines.push(`- 已驳回题目数：${paper.review_summary?.rejected_count ?? 0}`);
+    lines.push(`- 教师反馈轮次：${paper.revision_round ?? 0}`);
     lines.push("");
+  }
+
+  if (paper.paper_level_guidance.length > 0) {
+    lines.push("## 当前整卷指导");
+    lines.push("");
+    paper.paper_level_guidance.forEach((item) => {
+      lines.push(`- ${item}`);
+    });
+    lines.push("");
+  }
+
+  if (paper.feedback_history.length > 0) {
+    lines.push("## 教师反馈记忆");
+    lines.push("");
+    paper.feedback_history.forEach((record, index) => {
+      lines.push(`### 反馈轮次 ${index + 1}`);
+      lines.push("");
+      lines.push(`- 时间：${record.timestamp}`);
+      lines.push(`- 反馈人：${record.reviewer}`);
+      lines.push(`- 策略：${record.strategy}`);
+      lines.push(`- 摘要：${record.summary}`);
+      lines.push(`- 原始反馈：${record.teacher_feedback}`);
+      if (record.target_sections.length > 0) {
+        lines.push(`- 命中大题：${record.target_sections.join("、")}`);
+      }
+      if (record.target_question_ids.length > 0) {
+        lines.push(`- 命中题目：${record.target_question_ids.join("、")}`);
+      }
+      if (record.paper_level_guidance.length > 0) {
+        lines.push(`- 沉淀指导：${record.paper_level_guidance.join("；")}`);
+      }
+      if (record.planned_actions.length > 0) {
+        lines.push("- 计划动作：");
+        record.planned_actions.forEach((action) => {
+          lines.push(
+            `  - ${action.question_id} -> ${action.action}` +
+            (action.comment ? `：${action.comment}` : "")
+          );
+        });
+      }
+      lines.push("");
+    });
   }
 
   if (paper.source_scope.question_bank_ids.length > 0) {
@@ -462,6 +559,175 @@ const buildDraftMarkdown = (
   payload: ExamPaperValidatePayload
 ) => buildDraftMarkdownFromPaper(draftResult.paper, draftResult.validation, payload);
 
+const buildExamTaskProgressMarkdown = (
+  task: ExamGenerationTaskSnapshot,
+  assumptions: string[] = []
+) => {
+  const lines: string[] = [];
+  lines.push("# 试卷草案生成中");
+  lines.push("");
+  lines.push(`- 任务 ID：${task.task_id}`);
+  lines.push(`- 当前状态：${task.status}`);
+  lines.push(`- 总题位：${task.progress.total_slots}`);
+  lines.push(`- 已完成题位：${task.progress.completed_slots}`);
+  lines.push(`- AI 成功生成：${task.progress.generated_slots}`);
+  lines.push(`- 模板回退：${task.progress.template_slots}`);
+  lines.push(`- 待重生成：${task.progress.pending_regeneration_slots}`);
+  lines.push(`- 最新进展：${task.progress.latest_message || "等待后台更新"}`);
+  lines.push("");
+
+  if (task.events.length > 0) {
+    lines.push("## 实时进度");
+    lines.push("");
+    task.events.slice(-8).forEach((event) => {
+      lines.push(`- [${event.stage}] ${event.message}`);
+    });
+    lines.push("");
+  }
+
+  return prependAssumptionsMarkdown(lines.join("\n"), assumptions);
+};
+
+const buildExamTaskFailureMarkdown = (
+  task: ExamGenerationTaskSnapshot,
+  assumptions: string[] = []
+) => {
+  const lines: string[] = [];
+  lines.push("# 试卷草案生成失败");
+  lines.push("");
+  lines.push(`- 任务 ID：${task.task_id}`);
+  lines.push(`- 当前状态：${task.status}`);
+  lines.push(`- 错误说明：${task.error || "后台未返回详细错误"}`);
+  lines.push("");
+  lines.push("## 最近进度");
+  lines.push("");
+  task.events.slice(-10).forEach((event) => {
+    lines.push(`- [${event.stage}] ${event.message}`);
+  });
+  lines.push("");
+  return prependAssumptionsMarkdown(lines.join("\n"), assumptions);
+};
+
+const buildExamTaskOrderedData = (
+  taskSummary: string,
+  task: ExamGenerationTaskSnapshot,
+  reportMarkdown: string,
+  completed: boolean
+): Data[] => [
+  { type: "question", content: taskSummary } as QuestionData,
+  ...([
+    {
+      type: completed ? "report_complete" : "report",
+      output: reportMarkdown,
+      metadata: {
+        workflow_mode: "exam",
+        examPaper: task.paper || null,
+        examValidation: task.validation || null,
+        examTaskId: task.task_id,
+        examTaskStatus: task.status,
+      },
+    } as Data,
+  ]),
+  ...task.events.map(
+    (event) =>
+      ({
+        type: "logs",
+        content: "exam_task_event",
+        output: event.message,
+        metadata: {
+          category: "exam_task",
+          event_id: event.event_id,
+          stage: event.stage,
+          level: event.level,
+          timestamp: event.timestamp,
+          ...event.metadata,
+        },
+      }) as Data
+  ),
+];
+
+const buildExamResultOrderedData = (
+  taskSummary: string,
+  reportMarkdown: string,
+  paper: ExamDraftData | null,
+  validation: ExamValidationResult | null
+): Data[] => [
+  { type: "question", content: taskSummary } as QuestionData,
+  {
+    type: "report_complete",
+    output: reportMarkdown,
+    metadata: {
+      workflow_mode: "exam",
+      examPaper: paper,
+      examValidation: validation,
+    },
+  } as Data,
+];
+
+const extractExamArtifactsFromOrderedData = (items: Data[]) => {
+  const reportItem = [...items]
+    .reverse()
+    .find(
+      (item) =>
+        (item.type === "report" || item.type === "report_complete") &&
+        (item as { metadata?: Record<string, unknown> }).metadata?.workflow_mode === "exam"
+    ) as { metadata?: Record<string, unknown> } | undefined;
+
+  return {
+    examPaper: (reportItem?.metadata?.examPaper as ExamDraftData | null | undefined) || null,
+    examValidation:
+      (reportItem?.metadata?.examValidation as ExamValidationResult | null | undefined) || null,
+  };
+};
+
+const appendExamAssistantTurn = (
+  items: Data[],
+  reportMarkdown: string,
+  paper: ExamDraftData | null,
+  validation: ExamValidationResult | null
+): Data[] => [
+  ...items,
+  {
+    type: "report_complete",
+    output: reportMarkdown,
+    metadata: {
+      workflow_mode: "exam",
+      examPaper: paper,
+      examValidation: validation,
+    },
+  } as Data,
+];
+
+const appendExamConversationTurn = (
+  items: Data[],
+  userMessage: string,
+  reportMarkdown: string,
+  paper: ExamDraftData | null,
+  validation: ExamValidationResult | null
+): Data[] => [
+  ...items,
+  { type: "question", content: userMessage } as QuestionData,
+  {
+    type: "report_complete",
+    output: reportMarkdown,
+    metadata: {
+      workflow_mode: "exam",
+      examPaper: paper,
+      examValidation: validation,
+    },
+  } as Data,
+];
+
+const buildExamAgentProgressLogs = (
+  stages: Array<{ header: string; text: string; metadata?: Record<string, unknown> }>
+) =>
+  stages.map((stage, index) => ({
+    header: stage.header,
+    text: stage.text,
+    metadata: stage.metadata,
+    key: `exam-agent-progress-${index}-${stage.header}`,
+  }));
+
 const subjectLabelMap: Record<string, string> = {
   chinese: "语文",
   math: "数学",
@@ -475,7 +741,6 @@ const subjectLabelMap: Record<string, string> = {
 };
 
 export default function Home() {
-  const router = useRouter();
   const [promptValue, setPromptValue] = useState("");
   const [chatPromptValue, setChatPromptValue] = useState("");
   const [showResult, setShowResult] = useState(false);
@@ -483,9 +748,14 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [isInChatMode, setIsInChatMode] = useState(false);
   const [examDraft, setExamDraft] = useState<ExamRequestDraft>(createInitialExamDraft);
+  const [naturalExamRequest, setNaturalExamRequest] = useState(
+    "小学语文三年级下册期末考试试卷，难度一般。"
+  );
+  const [showAdvancedExamForm, setShowAdvancedExamForm] = useState(false);
   const [currentExamPaper, setCurrentExamPaper] = useState<ExamDraftData | null>(null);
   const [currentExamValidation, setCurrentExamValidation] = useState<ExamValidationResult | null>(null);
   const [reviewingQuestionIds, setReviewingQuestionIds] = useState<string[]>([]);
+  const [applyingTeacherFeedback, setApplyingTeacherFeedback] = useState(false);
   const [chatBoxSettings, setChatBoxSettings] = useState<ChatBoxSettings>(() => {
     // Default settings
     const defaultSettings = {
@@ -499,7 +769,7 @@ export default function Home() {
       mcp_enabled: false,
       mcp_configs: [],
       mcp_strategy: "fast",
-      generation_mode: "hybrid",
+      generation_mode: "ai_generate_only",
       include_answers: true,
       include_explanations: true,
       output_formats: ["json", "docx"],
@@ -527,13 +797,25 @@ export default function Home() {
   const [showHumanFeedback, setShowHumanFeedback] = useState(false);
   const [questionForHuman, setQuestionForHuman] = useState<true | false>(false);
   const [allLogs, setAllLogs] = useState<any[]>([]);
+  const [activeExamTaskSummary, setActiveExamTaskSummary] = useState("");
+  const [activeExamTaskLogs, setActiveExamTaskLogs] = useState<
+    Array<{
+      header: string;
+      text: string;
+      metadata?: Record<string, unknown>;
+      key: string;
+    }>
+  >([]);
   const [isStopped, setIsStopped] = useState(false);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const hasAutoOpenedSidebarRef = useRef(false);
   const [currentResearchId, setCurrentResearchId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [isProcessingChat, setIsProcessingChat] = useState(false);
   const isExamWorkflow = (chatBoxSettings.workflow_mode || "exam") === "exam";
+  const lockDesktopConversationSidebar = isExamWorkflow && !isMobile;
+  const desktopConversationSidebarOffsetClass = lockDesktopConversationSidebar ? "md:pl-[320px]" : "";
 
   // Use our custom scroll handler
   const { showScrollButton, scrollToBottom } = useScrollHandler(mainContentRef);
@@ -564,6 +846,15 @@ export default function Home() {
     getChatMessages
   } = useResearchHistoryContext();
 
+  useEffect(() => {
+    if (isMobile || hasAutoOpenedSidebarRef.current || history.length === 0) {
+      return;
+    }
+
+    setSidebarOpen(true);
+    hasAutoOpenedSidebarRef.current = true;
+  }, [history.length, isMobile]);
+
   // Only initialize the WebSocket hook reference, don't connect automatically
   const websocketRef = useRef(useWebSocket(
     setOrderedData,
@@ -583,10 +874,11 @@ export default function Home() {
     setShowHumanFeedback(false);
   };
 
-  const handleValidateExamRequest = async () => {
-    const payload = buildExamPayload(examDraft, chatBoxSettings);
-    const taskSummary = buildExamTaskSummary(examDraft);
-
+  const runExamGenerationFlow = async (
+    payload: ExamPaperValidatePayload,
+    taskSummary: string,
+    assumptions: string[] = []
+  ) => {
     setIsInChatMode(false);
     setShowResult(true);
     setLoading(true);
@@ -597,6 +889,9 @@ export default function Home() {
     setCurrentExamPaper(null);
     setCurrentExamValidation(null);
     setReviewingQuestionIds([]);
+    setApplyingTeacherFeedback(false);
+    setActiveExamTaskSummary(taskSummary);
+    setActiveExamTaskLogs([]);
     setOrderedData([{ type: "question", content: taskSummary } as QuestionData]);
     setChatBoxSettings((prev) => ({
       ...prev,
@@ -618,19 +913,19 @@ export default function Home() {
       }
 
       const result: ExamValidationResult = await response.json();
+      setCurrentExamValidation(result);
       if (!result.valid) {
-        setCurrentExamValidation(result);
-        const markdown = buildValidationMarkdown(result, payload);
+        const markdown = prependAssumptionsMarkdown(
+          buildValidationMarkdown(result, payload),
+          assumptions
+        );
         setAnswer(markdown);
-        setOrderedData([
-          { type: "question", content: taskSummary } as QuestionData,
-          { type: "report_complete", output: markdown } as Data,
-        ]);
+        setOrderedData(buildExamResultOrderedData(taskSummary, markdown, null, result));
         toast.error("组卷请求未通过校验");
         return;
       }
 
-      const previewResponse = await fetch("/api/exam-papers/generate-preview-paper", {
+      const taskCreateResponse = await fetch("/api/exam-papers/tasks", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -638,33 +933,63 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
 
-      if (!previewResponse.ok) {
-        throw new Error(`Failed to build exam draft: ${previewResponse.status}`);
+      if (!taskCreateResponse.ok) {
+        const errorPayload = await taskCreateResponse.json().catch(() => null);
+        throw new Error(
+          errorPayload?.detail?.error ||
+            errorPayload?.detail?.message ||
+            `Failed to create exam generation task: ${taskCreateResponse.status}`
+        );
       }
 
-      const previewResult: ExamDraftResult = await previewResponse.json();
-      if (!previewResult.valid || !previewResult.paper) {
-        setCurrentExamValidation(previewResult.validation);
-        const markdown =
-          buildValidationMarkdown(previewResult.validation, payload) +
-          "\n\n## 草案状态\n\n组卷请求虽然通过了基础校验，但题目级试卷草案尚未生成成功。";
-        setAnswer(markdown);
-        setOrderedData([
-          { type: "question", content: taskSummary } as QuestionData,
-          { type: "report_complete", output: markdown } as Data,
-        ]);
-        toast.error("校验通过，但试卷草案生成失败");
+      let taskSnapshot: ExamGenerationTaskSnapshot = await taskCreateResponse.json();
+      let progressMarkdown = buildExamTaskProgressMarkdown(taskSnapshot, assumptions);
+      setAnswer(progressMarkdown);
+      setOrderedData(buildExamTaskOrderedData(taskSummary, taskSnapshot, progressMarkdown, false));
+
+      while (taskSnapshot.status === "queued" || taskSnapshot.status === "running") {
+        await sleep(1500);
+        const taskStatusResponse = await fetch(`/api/exam-papers/tasks/${taskSnapshot.task_id}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (!taskStatusResponse.ok) {
+          throw new Error(`Failed to poll exam generation task: ${taskStatusResponse.status}`);
+        }
+        taskSnapshot = await taskStatusResponse.json();
+        progressMarkdown = buildExamTaskProgressMarkdown(taskSnapshot, assumptions);
+        setAnswer(progressMarkdown);
+        setOrderedData(buildExamTaskOrderedData(taskSummary, taskSnapshot, progressMarkdown, false));
+      }
+
+      if (taskSnapshot.status === "failed") {
+        const failedMarkdown = buildExamTaskFailureMarkdown(taskSnapshot, assumptions);
+        setAnswer(failedMarkdown);
+        setOrderedData(buildExamTaskOrderedData(taskSummary, taskSnapshot, failedMarkdown, true));
+        toast.error("试卷草案生成失败");
         return;
       }
 
-      setCurrentExamPaper(previewResult.paper);
-      setCurrentExamValidation(previewResult.validation);
-      const markdown = buildDraftMarkdown(previewResult, payload);
-      setAnswer(markdown);
-      setOrderedData([
-        { type: "question", content: taskSummary } as QuestionData,
-        { type: "report_complete", output: markdown } as Data,
-      ]);
+      if (!taskSnapshot.paper) {
+        const fallbackMarkdown = prependAssumptionsMarkdown(
+          buildValidationMarkdown(taskSnapshot.validation, payload) +
+            "\n\n## 草案状态\n\n后台任务已结束，但没有返回题目级试卷草案。",
+          assumptions
+        );
+        setAnswer(fallbackMarkdown);
+        setOrderedData(buildExamTaskOrderedData(taskSummary, taskSnapshot, fallbackMarkdown, true));
+        toast.error("后台任务已结束，但草案为空");
+        return;
+      }
+
+      setCurrentExamPaper(taskSnapshot.paper);
+      setCurrentExamValidation(taskSnapshot.validation);
+      const finalMarkdown = prependAssumptionsMarkdown(
+        buildDraftMarkdownFromPaper(taskSnapshot.paper, taskSnapshot.validation, payload),
+        assumptions
+      );
+      setAnswer(finalMarkdown);
+      setOrderedData(buildExamTaskOrderedData(taskSummary, taskSnapshot, finalMarkdown, true));
 
       toast.success("题目级试卷草案已生成");
     } catch (error) {
@@ -672,24 +997,110 @@ export default function Home() {
       const fallbackMarkdown = [
         "# 试卷草案生成失败",
         "",
-        "后端校验或题目级草案接口调用失败，当前无法生成这份组卷请求的试卷草案。",
+        "后端校验、任务创建或后台组卷任务执行失败，当前无法生成这份组卷请求的试卷草案。",
         "",
         "请优先检查：",
         "- 后端服务是否已启动",
         "- `/api/exam-papers/validate` 是否可访问",
-        "- `/api/exam-papers/generate-preview-paper` 是否可访问",
+        "- `/api/exam-papers/tasks` 是否可访问",
+        "- `/api/exam-papers/tasks/{task_id}` 是否可轮询",
         "- 当前请求字段是否被前端正确序列化",
       ].join("\n");
 
       setAnswer(fallbackMarkdown);
-      setOrderedData([
-        { type: "question", content: taskSummary } as QuestionData,
-        { type: "report_complete", output: fallbackMarkdown } as Data,
-      ]);
+      setOrderedData(buildExamResultOrderedData(taskSummary, fallbackMarkdown, null, null));
       toast.error("试卷草案生成失败");
     } finally {
+      setActiveExamTaskSummary("");
+      setActiveExamTaskLogs([]);
       setLoading(false);
     }
+  };
+
+  const handleValidateExamRequest = async () => {
+    const payload = buildExamPayload(examDraft, chatBoxSettings);
+    const taskSummary = buildExamTaskSummary(examDraft);
+    await runExamGenerationFlow(payload, taskSummary);
+  };
+
+  const handleNaturalExamRequestSubmit = async (requestText: string) => {
+    const trimmedRequest = requestText.trim();
+    if (!trimmedRequest) {
+      toast.error("请先输入自然语言组卷需求");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const intakePayload: ExamNaturalLanguageRequestPayload = {
+        user_request: trimmedRequest,
+        generation_mode: (chatBoxSettings.generation_mode || "ai_generate_only") as ExamNaturalLanguageRequestPayload["generation_mode"],
+        include_answers: chatBoxSettings.include_answers ?? true,
+        include_explanations: chatBoxSettings.include_explanations ?? true,
+        output_formats: chatBoxSettings.output_formats?.length ? chatBoxSettings.output_formats : ["json", "docx"],
+      };
+
+      const parseResponse = await fetch("/api/exam-papers/parse-natural-request", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(intakePayload),
+      });
+
+      if (!parseResponse.ok) {
+        throw new Error(`Failed to parse natural exam request: ${parseResponse.status}`);
+      }
+
+      const parseResult: ExamNaturalLanguageParseResult = await parseResponse.json();
+      if (!parseResult.valid || !parseResult.exam_request) {
+        const errorMessage = parseResult.errors[0]?.message || "自然语言组卷需求解析失败";
+        toast.error(errorMessage);
+        const markdown = [
+          "# 自然语言组卷需求解析失败",
+          "",
+          ...parseResult.errors.map((item) => `- [${item.path}] ${item.message}`),
+        ].join("\n");
+        setShowResult(true);
+        setQuestion(trimmedRequest);
+        setAnswer(markdown);
+        setOrderedData(buildExamResultOrderedData(trimmedRequest, markdown, null, null));
+        setLoading(false);
+        return;
+      }
+
+      setExamDraft(payloadToExamDraft(parseResult.exam_request));
+      await runExamGenerationFlow(
+        parseResult.exam_request,
+        parseResult.task_summary || trimmedRequest,
+        parseResult.assumptions || []
+      );
+    } catch (error) {
+      console.error("Natural exam request error:", error);
+      toast.error("自然语言组卷需求解析失败");
+      setLoading(false);
+    }
+  };
+
+  const handleNaturalExamRequest = async () => {
+    await handleNaturalExamRequestSubmit(naturalExamRequest);
+  };
+
+  const handleExamConversationSubmit = async (message: string) => {
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return;
+    }
+
+    setChatPromptValue("");
+
+    if (currentExamPaper) {
+      await handleApplyTeacherFeedback(trimmedMessage);
+      return;
+    }
+
+    setNaturalExamRequest(trimmedMessage);
+    await handleNaturalExamRequestSubmit(trimmedMessage);
   };
 
   const handleReviewExamQuestion = async (
@@ -742,10 +1153,9 @@ export default function Home() {
       setCurrentExamPaper(result.paper);
       const markdown = buildDraftMarkdownFromPaper(result.paper, currentExamValidation);
       setAnswer(markdown);
-      setOrderedData([
-        { type: "question", content: question } as QuestionData,
-        { type: "report_complete", output: markdown } as Data,
-      ]);
+      setOrderedData((prev) =>
+        appendExamAssistantTurn(prev, markdown, result.paper, currentExamValidation)
+      );
       toast.success(action === "approve" ? "已通过该题" : action === "reject" ? "已驳回该题" : "已标记为重生成");
       return true;
     } catch (error) {
@@ -754,6 +1164,96 @@ export default function Home() {
       return false;
     } finally {
       setReviewingQuestionIds((prev) => prev.filter((id) => id !== questionId));
+    }
+  };
+
+  const handleApplyTeacherFeedback = async (feedback: string) => {
+    if (!currentExamPaper) {
+      toast.error("当前没有可处理反馈的试卷草案");
+      return false;
+    }
+
+    const trimmedFeedback = feedback.trim();
+    if (!trimmedFeedback) {
+      toast.error("请先输入教师反馈");
+      return false;
+    }
+
+    setOrderedData((prev) => [...prev, { type: "question", content: trimmedFeedback } as QuestionData]);
+    setIsProcessingChat(true);
+    setApplyingTeacherFeedback(true);
+    setActiveExamTaskSummary(trimmedFeedback);
+    setActiveExamTaskLogs(
+      buildExamAgentProgressLogs([
+        {
+          header: "feedback_received",
+          text: "已接收教师反馈，正在分析本轮改卷要求。",
+        },
+        {
+          header: "planning_revision",
+          text: "Agent 正在判断是改单题、改大题还是重规划整卷。",
+        },
+        {
+          header: "awaiting_revision_result",
+          text: "修订计划已提交，等待返回新的试卷草案。",
+        },
+      ])
+    );
+    try {
+      const payload: ExamTeacherFeedbackRequestPayload = {
+        paper: currentExamPaper,
+        teacher_feedback: trimmedFeedback,
+        reviewer: "frontend_teacher",
+        max_actions: 4,
+      };
+
+      const response = await fetch("/api/exam-papers/apply-teacher-feedback", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to apply teacher feedback: ${response.status}`);
+      }
+
+      const result: ExamTeacherFeedbackResult = await response.json();
+      if (!result.valid || !result.paper) {
+        const errorMessage = result.errors[0]?.message || "教师反馈处理失败";
+        setOrderedData((prev) =>
+          appendExamAssistantTurn(prev, `教师反馈处理失败：${errorMessage}`, null, null)
+        );
+        toast.error(errorMessage);
+        return false;
+      }
+
+      setCurrentExamPaper(result.paper);
+      const markdown = buildDraftMarkdownFromPaper(result.paper, currentExamValidation);
+      setAnswer(markdown);
+      setOrderedData((prev) =>
+        appendExamAssistantTurn(prev, markdown, result.paper, currentExamValidation)
+      );
+      toast.success(result.summary || "Agent 已根据教师反馈调整试卷");
+      return true;
+    } catch (error) {
+      console.error("Teacher feedback agent error:", error);
+      setOrderedData((prev) =>
+        appendExamAssistantTurn(
+          prev,
+          "教师反馈处理失败。Agent 没有返回新的试卷草案，请稍后重试。",
+          null,
+          null
+        )
+      );
+      toast.error("教师反馈处理失败");
+      return false;
+    } finally {
+      setActiveExamTaskSummary("");
+      setActiveExamTaskLogs([]);
+      setIsProcessingChat(false);
+      setApplyingTeacherFeedback(false);
     }
   };
 
@@ -1309,11 +1809,15 @@ export default function Home() {
     setAnswer("");
     setOrderedData([]);
     setAllLogs([]);
+    setActiveExamTaskSummary("");
+    setActiveExamTaskLogs([]);
 
     // Reset feedback states
     setShowHumanFeedback(false);
     setQuestionForHuman(false);
     setExamDraft(createInitialExamDraft());
+    setNaturalExamRequest("小学语文三年级下册期末考试试卷，难度一般。");
+    setShowAdvancedExamForm(false);
     
     // Clean up connections
     if (socket) {
@@ -1356,6 +1860,37 @@ export default function Home() {
    * - Closes any existing WebSocket connections
    */
   const handleStartNewResearch = () => {
+    reset();
+    setSidebarOpen(false);
+  };
+
+  const handleStartNewConversation = () => {
+    setShowResult(true);
+    setLoading(false);
+    setIsStopped(false);
+    setIsInChatMode(false);
+    setQuestion("");
+    setAnswer("");
+    setOrderedData([]);
+    setAllLogs([]);
+    setActiveExamTaskSummary("");
+    setActiveExamTaskLogs([]);
+    setCurrentResearchId(null);
+    setCurrentExamPaper(null);
+    setCurrentExamValidation(null);
+    setReviewingQuestionIds([]);
+    setApplyingTeacherFeedback(false);
+    setPromptValue("");
+    setChatPromptValue("");
+    setSidebarOpen(false);
+    setChatBoxSettings((prev) => ({
+      ...prev,
+      workflow_mode: "exam",
+      layoutType: "research",
+    }));
+  };
+
+  const handleGoHome = () => {
     reset();
     setSidebarOpen(false);
   };
@@ -1437,8 +1972,34 @@ export default function Home() {
     try {
       const research = await getResearchById(id);
       if (research) {
-        // Navigate to the research page instead of loading it here
-        router.push(`/research/${id}`);
+        const { examPaper, examValidation } = extractExamArtifactsFromOrderedData(research.orderedData);
+        const isExamConversation =
+          Boolean(examPaper) ||
+          research.orderedData.some(
+            (item) => item.type === "logs" && item.metadata?.category === "exam_task"
+          ) ||
+          research.answer.includes("试卷草案");
+
+        setShowResult(true);
+        setLoading(false);
+        setIsStopped(false);
+        setQuestion(research.question);
+        setAnswer(research.answer);
+        setOrderedData(research.orderedData);
+        setCurrentResearchId(research.id);
+        setCurrentExamPaper(examPaper);
+        setCurrentExamValidation(examValidation);
+        setReviewingQuestionIds([]);
+        setApplyingTeacherFeedback(false);
+        setActiveExamTaskSummary("");
+        setActiveExamTaskLogs([]);
+        setSidebarOpen(false);
+        setChatBoxSettings((prev) => ({
+          ...prev,
+          workflow_mode: isExamConversation ? "exam" : "research",
+          layoutType: "research",
+        }));
+        setIsInChatMode(!isExamConversation);
       }
     } catch (error) {
       console.error('Error selecting research:', error);
@@ -1478,6 +2039,16 @@ export default function Home() {
           metadata: data.metadata,
           key: `${data.type}-${data.content}`,
         }];
+      } else if (data.type === 'logs' && data.metadata?.category === 'exam_task') {
+        return [
+          ...acc,
+          {
+            header: data.metadata?.stage || 'exam_task',
+            text: data.output,
+            metadata: data.metadata,
+            key: data.metadata?.event_id || `${data.type}-${data.content}-${acc.length}`,
+          },
+        ];
       }
       return acc;
     }, []);
@@ -1505,6 +2076,11 @@ export default function Home() {
           examDraft={examDraft}
           setExamDraft={setExamDraft}
           handleValidateExamRequest={handleValidateExamRequest}
+          naturalExamRequest={naturalExamRequest}
+          setNaturalExamRequest={setNaturalExamRequest}
+          handleNaturalExamRequest={handleNaturalExamRequest}
+          showAdvancedExamForm={showAdvancedExamForm}
+          toggleAdvancedExamForm={() => setShowAdvancedExamForm((prev) => !prev)}
           isLoading={loading}
         />
       );
@@ -1525,7 +2101,9 @@ export default function Home() {
           workflowMode={chatBoxSettings.workflow_mode}
           examPaper={currentExamPaper}
           reviewingQuestionIds={reviewingQuestionIds}
+          applyingTeacherFeedback={applyingTeacherFeedback}
           onReviewExamQuestion={handleReviewExamQuestion}
+          onApplyTeacherFeedback={handleApplyTeacherFeedback}
         />
       );
     }
@@ -1546,6 +2124,7 @@ export default function Home() {
           mainContentRef,
           toggleSidebar,
           isProcessingChat,
+          hideResultAction: showResult && isExamWorkflow,
           children: renderMobileContent()
         })
       ) : !showResult ? (
@@ -1561,23 +2140,45 @@ export default function Home() {
           mainContentRef,
           showScrollButton,
           onScrollToBottom: scrollToBottom,
+          lockViewport: isExamWorkflow,
+          hideResultAction: showResult && isExamWorkflow,
+          shiftHeaderForSidebar: lockDesktopConversationSidebar,
           children: (
             <>
               <ResearchSidebar
                 history={history}
                 onSelectResearch={handleSelectResearch}
-                onNewResearch={handleStartNewResearch}
+                onNewResearch={isExamWorkflow ? handleStartNewConversation : handleStartNewResearch}
                 onDeleteResearch={deleteResearch}
                 isOpen={sidebarOpen}
                 toggleSidebar={toggleSidebar}
+                lockOpenOnDesktop={lockDesktopConversationSidebar}
+                currentConversationId={currentResearchId}
+                generatingConversationId={currentResearchId && (loading || isProcessingChat) ? currentResearchId : null}
+                title={isExamWorkflow ? "对话历史" : undefined}
+                newButtonLabel={isExamWorkflow ? "新对话" : undefined}
+                searchPlaceholder={isExamWorkflow ? "搜索对话记录" : undefined}
+                emptyTitle={isExamWorkflow ? "还没有对话历史" : undefined}
+                emptyDescription={
+                  isExamWorkflow
+                    ? "从一句教师需求开始，逐步生成、审核并修改试卷。"
+                    : undefined
+                }
               />
               
-              <Hero
-                examDraft={examDraft}
-                setExamDraft={setExamDraft}
-                handleValidateExamRequest={handleValidateExamRequest}
-                loading={loading}
-              />
+              <div className={`h-full min-h-0 overflow-hidden ${desktopConversationSidebarOffsetClass}`}>
+                <Hero
+                  examDraft={examDraft}
+                  setExamDraft={setExamDraft}
+                  handleValidateExamRequest={handleValidateExamRequest}
+                  naturalExamRequest={naturalExamRequest}
+                  setNaturalExamRequest={setNaturalExamRequest}
+                  handleNaturalExamRequest={handleNaturalExamRequest}
+                  showAdvancedExamForm={showAdvancedExamForm}
+                  toggleAdvancedExamForm={() => setShowAdvancedExamForm((prev) => !prev)}
+                  loading={loading}
+                />
+              </div>
             </>
           )
         })
@@ -1592,68 +2193,95 @@ export default function Home() {
           chatBoxSettings,
           setChatBoxSettings,
           mainContentRef,
+          hideResultAction: showResult && isExamWorkflow,
+          shiftHeaderForSidebar: lockDesktopConversationSidebar,
           children: (
-            <div className="relative">
+            <div className="relative h-full min-h-0 overflow-hidden">
               <ResearchSidebar
                 history={history}
                 onSelectResearch={handleSelectResearch}
-                onNewResearch={handleStartNewResearch}
+                onNewResearch={isExamWorkflow ? handleStartNewConversation : handleStartNewResearch}
                 onDeleteResearch={deleteResearch}
                 isOpen={sidebarOpen}
                 toggleSidebar={toggleSidebar}
+                lockOpenOnDesktop={lockDesktopConversationSidebar}
+                currentConversationId={currentResearchId}
+                generatingConversationId={currentResearchId && (loading || isProcessingChat) ? currentResearchId : null}
+                title={isExamWorkflow ? "对话历史" : undefined}
+                newButtonLabel={isExamWorkflow ? "新对话" : undefined}
+                searchPlaceholder={isExamWorkflow ? "搜索对话记录" : undefined}
+                emptyTitle={isExamWorkflow ? "还没有对话历史" : undefined}
+                emptyDescription={
+                  isExamWorkflow
+                    ? "从一句教师需求开始，逐步生成、审核并修改试卷。"
+                    : undefined
+                }
               />
               
-              {chatBoxSettings.layoutType === 'copilot' ? (
-                <CopilotResearchContent
-                  orderedData={orderedData}
-                  answer={answer}
-                  allLogs={allLogs}
-                  chatBoxSettings={chatBoxSettings}
-                  loading={loading}
-                  isStopped={isStopped}
-                  promptValue={promptValue}
-                  chatPromptValue={chatPromptValue}
-                  setPromptValue={setPromptValue}
-                  setChatPromptValue={setChatPromptValue}
-                  handleDisplayResult={handleDisplayResult}
-                  handleChat={handleChat}
-                  handleClickSuggestion={handleClickSuggestion}
-                  currentResearchId={currentResearchId || undefined}
-                  onShareClick={currentResearchId ? handleCopyUrl : undefined}
-                  reset={reset}
-                  isProcessingChat={isProcessingChat}
-                  onNewResearch={handleStartNewResearch}
-                  toggleSidebar={toggleSidebar}
-                  examPaper={currentExamPaper}
-                  reviewingQuestionIds={reviewingQuestionIds}
-                  onReviewExamQuestion={handleReviewExamQuestion}
-                />
-              ) : (
-                <ResearchContent
-                  showResult={showResult}
-                  orderedData={orderedData}
-                  answer={answer}
-                  allLogs={allLogs}
-                  chatBoxSettings={chatBoxSettings}
-                  loading={loading}
-                  isInChatMode={isInChatMode}
-                  isStopped={isStopped}
-                  promptValue={promptValue}
-                  chatPromptValue={chatPromptValue}
-                  setPromptValue={setPromptValue}
-                  setChatPromptValue={setChatPromptValue}
-                  handleDisplayResult={handleDisplayResult}
-                  handleChat={handleChat}
-                  handleClickSuggestion={handleClickSuggestion}
-                  currentResearchId={currentResearchId || undefined}
-                  onShareClick={currentResearchId ? handleCopyUrl : undefined}
-                  reset={reset}
-                  isProcessingChat={isProcessingChat}
-                  examPaper={currentExamPaper}
-                  reviewingQuestionIds={reviewingQuestionIds}
-                  onReviewExamQuestion={handleReviewExamQuestion}
-                />
-              )}
+              <div className={`h-full min-h-0 overflow-hidden ${desktopConversationSidebarOffsetClass}`}>
+                {chatBoxSettings.layoutType === 'copilot' ? (
+                  <CopilotResearchContent
+                    orderedData={orderedData}
+                    answer={answer}
+                    allLogs={allLogs}
+                    chatBoxSettings={chatBoxSettings}
+                    loading={loading}
+                    isStopped={isStopped}
+                    promptValue={promptValue}
+                    chatPromptValue={chatPromptValue}
+                    setPromptValue={setPromptValue}
+                    setChatPromptValue={setChatPromptValue}
+                    handleDisplayResult={handleDisplayResult}
+                    handleChat={isExamWorkflow ? handleExamConversationSubmit : handleChat}
+                    handleClickSuggestion={handleClickSuggestion}
+                    currentResearchId={currentResearchId || undefined}
+                    onShareClick={currentResearchId ? handleCopyUrl : undefined}
+                    reset={reset}
+                    isProcessingChat={isProcessingChat}
+                    onNewResearch={isExamWorkflow ? handleStartNewConversation : handleStartNewResearch}
+                    onGoHome={handleGoHome}
+                    toggleSidebar={toggleSidebar}
+                    examPaper={currentExamPaper}
+                    reviewingQuestionIds={reviewingQuestionIds}
+                    applyingTeacherFeedback={applyingTeacherFeedback}
+                    onReviewExamQuestion={handleReviewExamQuestion}
+                    onApplyTeacherFeedback={handleApplyTeacherFeedback}
+                    activeTaskSummary={activeExamTaskSummary}
+                    activeLogs={activeExamTaskLogs}
+                  />
+                ) : (
+                  <ResearchContent
+                    showResult={showResult}
+                    orderedData={orderedData}
+                    answer={answer}
+                    allLogs={allLogs}
+                    chatBoxSettings={chatBoxSettings}
+                    loading={loading}
+                    isInChatMode={isInChatMode}
+                    isStopped={isStopped}
+                    promptValue={promptValue}
+                    chatPromptValue={chatPromptValue}
+                    setPromptValue={setPromptValue}
+                    setChatPromptValue={setChatPromptValue}
+                    handleDisplayResult={handleDisplayResult}
+                    handleChat={isExamWorkflow ? handleExamConversationSubmit : handleChat}
+                    handleClickSuggestion={handleClickSuggestion}
+                    currentResearchId={currentResearchId || undefined}
+                    onShareClick={currentResearchId ? handleCopyUrl : undefined}
+                    reset={reset}
+                    isProcessingChat={isProcessingChat}
+                    examPaper={currentExamPaper}
+                    reviewingQuestionIds={reviewingQuestionIds}
+                    applyingTeacherFeedback={applyingTeacherFeedback}
+                    onReviewExamQuestion={handleReviewExamQuestion}
+                    onApplyTeacherFeedback={handleApplyTeacherFeedback}
+                    onNewConversation={handleStartNewConversation}
+                    onGoHome={handleGoHome}
+                    activeTaskSummary={activeExamTaskSummary}
+                    activeLogs={activeExamTaskLogs}
+                  />
+                )}
+              </div>
               
               {showHumanFeedback && false && (
                 <HumanFeedback

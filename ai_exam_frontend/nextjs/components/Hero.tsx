@@ -1,8 +1,15 @@
-import React, { FC, useEffect, useState } from "react";
+import React, { FC, useEffect, useState, useCallback } from "react";
 import ExamRequestForm from "./Exam/ExamRequestForm";
+import ExamNaturalRequestForm from "./Exam/ExamNaturalRequestForm";
 import InputArea from "./ResearchBlocks/elements/InputArea";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { ExamRequestDraft } from "@/types/exam";
+
+type Ripple = {
+  id: number;
+  x: number;
+  y: number;
+};
 
 type THeroProps = {
   examDraft?: ExamRequestDraft;
@@ -12,6 +19,11 @@ type THeroProps = {
   setPromptValue?: React.Dispatch<React.SetStateAction<string>>;
   handleDisplayResult?: (query: string) => void;
   loading?: boolean;
+  naturalExamRequest?: string;
+  setNaturalExamRequest?: React.Dispatch<React.SetStateAction<string>>;
+  handleNaturalExamRequest?: () => void;
+  showAdvancedExamForm?: boolean;
+  toggleAdvancedExamForm?: () => void;
 };
 
 const Hero: FC<THeroProps> = ({
@@ -22,20 +34,50 @@ const Hero: FC<THeroProps> = ({
   setPromptValue,
   handleDisplayResult,
   loading = false,
+  naturalExamRequest,
+  setNaturalExamRequest,
+  handleNaturalExamRequest,
+  showAdvancedExamForm = false,
+  toggleAdvancedExamForm,
 }) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [ripples, setRipples] = useState<Ripple[]>([]);
   const isExamMode = Boolean(examDraft && setExamDraft && handleValidateExamRequest);
 
   useEffect(() => {
     setIsVisible(true);
   }, []);
 
+  // 处理点击波纹效果
+  const handleClick = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    // 只在点击背景区域时触发，避免点击按钮、输入框等交互元素时也产生波纹
+    if ((e.target as HTMLElement).closest('button, textarea, input, a')) {
+      return;
+    }
+    
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const newRipple = {
+      id: Date.now() + Math.random(),
+      x,
+      y,
+    };
+    
+    setRipples(prev => [...prev, newRipple]);
+    
+    // 自动清理波纹
+    setTimeout(() => {
+      setRipples(prev => prev.filter(r => r.id !== newRipple.id));
+    }, 2000);
+  }, []);
+
   const handleClickSuggestion = (value: string) => {
     if (isExamMode && setExamDraft) {
-      setExamDraft((prev) => ({
-        ...prev,
-        notes_to_generator: value,
-      }));
+      if (setNaturalExamRequest) {
+        setNaturalExamRequest(value);
+      }
       return;
     }
 
@@ -50,26 +92,154 @@ const Hero: FC<THeroProps> = ({
   };
 
   return (
-    <section className="relative min-h-[100vh] overflow-hidden pt-[120px] pb-20">
-      <div className="apple-noise pointer-events-none absolute inset-0 opacity-80" />
+    <section 
+      className={`relative overflow-hidden cursor-default ${
+        isExamMode ? "h-full min-h-0 py-6" : "min-h-[90vh] pb-20 pt-[80px]"
+      }`}
+      onClick={handleClick}
+    >      <div className="apple-noise pointer-events-none absolute inset-0 opacity-80" />
 
-      <div className="pointer-events-none absolute inset-x-0 top-20 mx-auto h-[420px] w-[420px] rounded-full bg-white/8 blur-[120px] apple-ambient sm:h-[520px] sm:w-[520px]" />
-      <div className="pointer-events-none absolute -left-24 top-1/3 h-[280px] w-[280px] rounded-full bg-white/6 blur-[90px] apple-ambient" />
-      <div className="pointer-events-none absolute -right-24 bottom-10 h-[320px] w-[320px] rounded-full bg-zinc-300/10 blur-[110px] apple-ambient" />
+      {/* 动态背景光晕层 */}
+      <motion.div
+        animate={{
+          scale: [1, 1.05, 1],
+          opacity: [0.3, 0.4, 0.3],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute inset-x-0 top-40 mx-auto h-[380px] w-[380px] rounded-full bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-pink-500/20 blur-[120px] sm:h-[480px] sm:w-[480px]"
+      />
+      <motion.div
+        animate={{
+          x: [0, 20, 0],
+          opacity: [0.2, 0.3, 0.2],
+        }}
+        transition={{
+          duration: 12,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute -left-24 top-1/3 h-[280px] w-[280px] rounded-full bg-cyan-400/20 blur-[90px]"
+      />
+      <motion.div
+        animate={{
+          x: [0, -20, 0],
+          opacity: [0.2, 0.3, 0.2],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute -right-24 bottom-10 h-[320px] w-[320px] rounded-full bg-indigo-500/20 blur-[110px]"
+      />
+      
+      {/* 新增彩色动态光晕 */}
+      <motion.div
+        animate={{
+          y: [0, 30, 0],
+          opacity: [0.15, 0.25, 0.15],
+        }}
+        transition={{
+          duration: 15,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute left-1/4 top-1/2 h-[250px] w-[250px] rounded-full bg-pink-500/20 blur-[100px]"
+      />
+      <motion.div
+        animate={{
+          y: [0, -25, 0],
+          opacity: [0.1, 0.2, 0.1],
+        }}
+        transition={{
+          duration: 18,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute right-1/4 top-1/4 h-[220px] w-[220px] rounded-full bg-orange-400/15 blur-[90px]"
+      />
+      <motion.div
+        animate={{
+          scale: [0.9, 1.1, 0.9],
+          opacity: [0.12, 0.2, 0.12],
+        }}
+        transition={{
+          duration: 20,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute left-1/3 bottom-1/4 h-[300px] w-[300px] rounded-full bg-teal-400/15 blur-[100px]"
+      />
 
       <div className="pointer-events-none absolute inset-x-0 top-[18%] mx-auto h-px max-w-[980px] bg-gradient-to-r from-transparent via-white/30 to-transparent apple-chrome-line" />
+
+      {/* 上下渐变光带 */}
+      <motion.div
+        animate={{
+          opacity: [0.1, 0.2, 0.1],
+          y: [0, 10, 0],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-purple-500/10 to-transparent"
+      />
+      <motion.div
+        animate={{
+          opacity: [0.1, 0.18, 0.1],
+          y: [0, -10, 0],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-blue-500/10 to-transparent"
+      />
+
+      {/* 点击波纹容器 */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <AnimatePresence>
+          {ripples.map(ripple => (
+            <motion.div
+              key={ripple.id}
+              initial={{ scale: 0, opacity: 0.4 }}
+              animate={{ scale: 4, opacity: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 2, ease: "easeOut" }}
+              className="absolute rounded-full bg-gradient-to-r from-purple-500/30 to-blue-500/30 blur-xl"
+              style={{
+                left: ripple.x - 50,
+                top: ripple.y - 50,
+                width: 100,
+                height: 100,
+              }}
+            />
+          ))}
+        </AnimatePresence>
+      </div>
 
       <motion.div
         initial="hidden"
         animate={isVisible ? "visible" : "hidden"}
         variants={fadeInUp}
         transition={{ duration: 0.8 }}
-        className="relative z-10 mx-auto flex w-full max-w-[1240px] flex-col items-center px-4"
+        className={`relative z-10 mx-auto flex w-full max-w-[1240px] flex-col items-center px-4 ${
+          isExamMode ? "h-full justify-center" : ""
+        }`}
       >
         <motion.div
           variants={fadeInUp}
           transition={{ duration: 0.7, delay: 0.05 }}
-          className="apple-chip mb-6 inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium uppercase tracking-[0.28em]"
+          className={`apple-chip inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium uppercase tracking-[0.28em] ${
+            isExamMode ? "mb-4" : "mb-6"
+          }`}
         >
           <span className="h-2 w-2 rounded-full bg-white/70" />
           {isExamMode ? "AI 组卷引擎" : "AI 研究引擎"}
@@ -78,15 +248,11 @@ const Hero: FC<THeroProps> = ({
         <motion.h1
           variants={fadeInUp}
           transition={{ duration: 0.85, delay: 0.12 }}
-          className="apple-heading-gradient max-w-[980px] text-center text-5xl font-semibold leading-[0.95] tracking-[-0.06em] sm:text-6xl lg:text-8xl"
+          className={`bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent max-w-[980px] text-center font-semibold leading-[0.95] tracking-[-0.06em] drop-shadow-[0_0_30px_rgba(139,92,246,0.2)] ${
+            isExamMode ? "text-4xl sm:text-5xl lg:text-6xl" : "text-5xl sm:text-6xl lg:text-8xl"
+          }`}
         >
-          {isExamMode ? (
-            <>
-              先把试卷约束结构化，
-              <br />
-              再让后端判断它是否可执行。
-            </>
-          ) : (
+          {isExamMode ? "AI 智能组卷" : (
             <>
               以更安静的界面，
               <br />
@@ -98,27 +264,49 @@ const Hero: FC<THeroProps> = ({
         <motion.p
           variants={fadeInUp}
           transition={{ duration: 0.7, delay: 0.2 }}
-          className="mt-6 max-w-[760px] text-center text-base leading-7 text-white/58 sm:text-lg"
+          className={`max-w-[760px] text-center leading-7 text-white/58 ${
+            isExamMode ? "mt-3 text-sm sm:text-base" : "mt-4 text-base sm:text-lg"
+          }`}
         >
           {isExamMode
-            ? "这一阶段先打通 AI 组卷请求的前端表单和后端验证接口。目标不是立即出卷，而是先把学科、题型、分值、知识点和组卷模式这类输入固定下来。"
-            : "黑白灰的主视觉、更克制的层次和更强的专注感。输入一个问题，GPT Researcher 会把检索、整理、归纳和成文压缩到同一条工作流里。"}
+            ? "输入一句话需求，AI自动组卷。"
+            : "黑白灰的主视觉、更克制的层次和更强的专注感。输入一个问题，GPT Researcher 会把检索、整理、归纳和成压缩到同一条工作流里。"}
         </motion.p>
 
         <motion.div
           variants={fadeInUp}
           transition={{ duration: 0.85, delay: 0.28 }}
-          className="relative mt-12 w-full max-w-[960px]"
+          className={`relative w-full max-w-[960px] ${
+            isExamMode ? "mt-6 flex-1 min-h-0" : "mt-8"
+          }`}
         >
-          <div className="pointer-events-none absolute inset-x-[14%] -top-10 h-28 rounded-full bg-white/12 blur-[90px]" />
-          <div className="apple-panel-strong rounded-[34px] p-3 sm:p-4">
+          <div className="pointer-events-none absolute inset-x-[14%] -top-10 h-28 rounded-full bg-gradient-to-r from-blue-500/20 to-purple-500/20 blur-[90px]" />
+          <motion.div
+            whileHover={{ scale: 1.01 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className={`apple-panel-strong rounded-[34px] border border-white/10 bg-gradient-to-br from-black/40 via-black/50 to-black/40 backdrop-blur-xl shadow-[0_0_50px_rgba(139,92,246,0.1)] ${
+              isExamMode ? "flex h-full min-h-0 flex-col p-3 sm:p-4" : "p-3 sm:p-4"
+            }`}
+          >
             {isExamMode && examDraft && setExamDraft && handleValidateExamRequest ? (
-              <ExamRequestForm
-                draft={examDraft}
-                setDraft={setExamDraft}
-                onSubmit={handleValidateExamRequest}
-                disabled={loading}
-              />
+              <div className={`space-y-4 ${showAdvancedExamForm ? "min-h-0 overflow-y-auto no-scrollbar pr-1" : ""}`}>
+                <ExamNaturalRequestForm
+                  value={naturalExamRequest || ""}
+                  onChange={setNaturalExamRequest || (() => undefined)}
+                  onSubmit={handleNaturalExamRequest || handleValidateExamRequest}
+                  disabled={loading}
+                  showAdvanced={showAdvancedExamForm}
+                  onToggleAdvanced={toggleAdvancedExamForm}
+                />
+                {showAdvancedExamForm && (
+                  <ExamRequestForm
+                    draft={examDraft}
+                    setDraft={setExamDraft}
+                    onSubmit={handleValidateExamRequest}
+                    disabled={loading}
+                  />
+                )}
+              </div>
             ) : (
               <InputArea
                 promptValue={promptValue || ""}
@@ -127,18 +315,15 @@ const Hero: FC<THeroProps> = ({
                 disabled={loading}
               />
             )}
-          </div>
-          <p className="mt-5 text-center text-sm text-white/42">
-            {isExamMode
-              ? "当前只校验请求结构和业务一致性，不会直接生成试卷正文。"
-              : "GPT Researcher 可能会出错。重要结论请自行复核，并检查来源引用。"}
-          </p>
+          </motion.div>
         </motion.div>
 
         <motion.div
           variants={fadeInUp}
           transition={{ duration: 0.8, delay: 0.38 }}
-          className="mt-12 flex w-full max-w-[1120px] flex-wrap items-center justify-center gap-3"
+          className={`flex w-full max-w-[1120px] flex-wrap items-center justify-center gap-3 ${
+            isExamMode ? "mt-5" : "mt-10"
+          }`}
         >
           {suggestions.map((item, index) => (
             <motion.button
@@ -147,11 +332,17 @@ const Hero: FC<THeroProps> = ({
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.45, delay: 0.48 + index * 0.08 }}
               onClick={() => handleClickSuggestion(item.name)}
-              className="apple-chip group min-w-[220px] rounded-[24px] px-5 py-4 text-left sm:min-w-[260px]"
+              className={`apple-chip group rounded-[24px] text-left ${
+                isExamMode
+                  ? "min-w-[220px] flex-1 px-4 py-3 sm:min-w-[240px] sm:flex-none"
+                  : "min-w-[220px] px-5 py-4 sm:min-w-[260px]"
+              }`}
               whileHover={{ y: -3, scale: 1.01 }}
               whileTap={{ scale: 0.99 }}
             >
-              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
+              <div className={`flex items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
+                isExamMode ? "mb-3 h-10 w-10" : "mb-4 h-11 w-11"
+              }`}>
                 <img
                   src={item.icon}
                   alt={item.name}
@@ -160,7 +351,7 @@ const Hero: FC<THeroProps> = ({
                   className="opacity-80 invert"
                 />
               </div>
-              <div className="text-sm font-medium text-white/88">{item.name}</div>
+              <div className={`font-medium text-white/88 ${isExamMode ? "text-[13px] leading-6" : "text-sm"}`}>{item.name}</div>
               <div className="mt-1 text-xs tracking-[0.18em] uppercase text-white/38">
                 快速开始
               </div>
@@ -181,17 +372,17 @@ type SuggestionType = {
 const suggestions: SuggestionType[] = [
   {
     id: 1,
-    name: "整体难度前易后难，压轴题控制在最后一题",
+    name: "小学语文三年级下册期末考试试卷，难度一般。",
     icon: "/img/stock2.svg",
   },
   {
     id: 2,
-    name: "优先从题库抽题，不足部分再允许 AI 补题",
+    name: "初中数学八年级上册单元测试卷，难度中等偏上。",
     icon: "/img/news.svg",
   },
   {
     id: 3,
-    name: "知识点覆盖要均衡，避免偏题和超纲内容",
+    name: "小学数学六年级下册期末考试试卷，基础题和应用题比例均衡。",
     icon: "/img/hiker.svg",
   },
 ];

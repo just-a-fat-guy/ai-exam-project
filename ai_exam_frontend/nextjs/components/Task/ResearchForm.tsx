@@ -18,7 +18,7 @@ export default function ResearchForm({
   setChatBoxSettings,
 }: ResearchFormProps) {
   const {
-    generation_mode = "hybrid",
+    generation_mode = "ai_generate_only",
     include_answers = true,
     include_explanations = true,
     output_formats = ["json", "docx"],

@@ -17,6 +17,8 @@ interface CopilotLayoutProps {
   mainContentRef?: React.RefObject<HTMLDivElement>;
   toastOptions?: Record<string, any>;
   toggleSidebar?: () => void;
+  hideResultAction?: boolean;
+  shiftHeaderForSidebar?: boolean;
 }
 
 export default function CopilotLayout({
@@ -30,13 +32,16 @@ export default function CopilotLayout({
   setChatBoxSettings,
   mainContentRef,
   toastOptions = {},
-  toggleSidebar
+  toggleSidebar,
+  hideResultAction = false,
+  shiftHeaderForSidebar = false,
 }: CopilotLayoutProps) {
   const defaultRef = useRef<HTMLDivElement>(null);
   const contentRef = mainContentRef || defaultRef;
+  const lockViewport = hideResultAction && showResult;
   
   return (
-    <main className="relative flex min-h-screen flex-col overflow-hidden text-white">
+    <main className={`relative flex flex-col overflow-hidden text-white ${lockViewport ? "h-screen" : "min-h-screen"}`}>
       <Toaster 
         position="bottom-center" 
         toastOptions={toastOptions}
@@ -58,19 +63,29 @@ export default function CopilotLayout({
           onStop={onStop || (() => {})}
           onNewResearch={onNewResearch}
           isCopilotMode={true}
+          hideResultAction={hideResultAction}
+          shiftForSidebar={shiftHeaderForSidebar}
         />
       )}
       
       <div 
         ref={contentRef}
-        className={`relative z-10 flex flex-1 flex-col ${!showResult ? 'pt-[120px]' : 'pt-[96px]'}`}
+        className={`relative z-10 flex flex-1 flex-col ${
+          lockViewport
+            ? "h-screen overflow-hidden pt-[96px]"
+            : !showResult
+              ? "pt-[120px]"
+              : "pt-[96px]"
+        }`}
       >
         {children}
       </div>
       
-      <div className="relative z-10 px-4 pb-4 lg:px-8">
-        <Footer setChatBoxSettings={setChatBoxSettings} chatBoxSettings={chatBoxSettings} />
-      </div>
+      {!lockViewport ? (
+        <div className="relative z-10 px-4 pb-4 lg:px-8">
+          <Footer setChatBoxSettings={setChatBoxSettings} chatBoxSettings={chatBoxSettings} />
+        </div>
+      ) : null}
     </main>
   );
 } 

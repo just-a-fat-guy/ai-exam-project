@@ -19,6 +19,9 @@ interface LayoutProps {
   toastOptions?: Record<string, any>;
   toggleSidebar?: () => void;
   isProcessingChat?: boolean;
+  hideResultAction?: boolean;
+  lockViewport?: boolean;
+  shiftHeaderForSidebar?: boolean;
 }
 
 export const getAppropriateLayout = ({
@@ -35,7 +38,10 @@ export const getAppropriateLayout = ({
   onScrollToBottom,
   toastOptions = {},
   toggleSidebar,
-  isProcessingChat = false
+  isProcessingChat = false,
+  hideResultAction = false,
+  lockViewport = false,
+  shiftHeaderForSidebar = false,
 }: LayoutProps) => {
   const [isMobile, setIsMobile] = useState(false);
   
@@ -69,6 +75,8 @@ export const getAppropriateLayout = ({
         mainContentRef={mainContentRef}
         toastOptions={toastOptions}
         toggleSidebar={toggleSidebar}
+        hideResultAction={hideResultAction}
+        shiftHeaderForSidebar={shiftHeaderForSidebar}
       >
         {children}
       </MobileLayout>
@@ -89,6 +97,8 @@ export const getAppropriateLayout = ({
         mainContentRef={mainContentRef}
         toastOptions={toastOptions}
         toggleSidebar={toggleSidebar}
+        hideResultAction={hideResultAction}
+        shiftHeaderForSidebar={shiftHeaderForSidebar}
       >
         {children}
       </CopilotLayout>
@@ -109,8 +119,11 @@ export const getAppropriateLayout = ({
       showScrollButton={showScrollButton}
       onScrollToBottom={onScrollToBottom}
       toastOptions={toastOptions}
+      hideResultAction={hideResultAction}
+      lockViewport={lockViewport}
+      shiftHeaderForSidebar={shiftHeaderForSidebar}
     >
       {children}
     </ResearchPageLayout>
   );
-}; 
+};

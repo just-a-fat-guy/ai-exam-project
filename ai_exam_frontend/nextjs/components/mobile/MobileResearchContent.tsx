@@ -21,11 +21,13 @@ interface MobileResearchContentProps {
   workflowMode?: string;
   examPaper?: ExamDraftData | null;
   reviewingQuestionIds?: string[];
+  applyingTeacherFeedback?: boolean;
   onReviewExamQuestion?: (
     questionId: string,
     action: "approve" | "reject" | "request_regeneration",
     comment?: string
   ) => Promise<boolean>;
+  onApplyTeacherFeedback?: (feedback: string) => Promise<boolean>;
 }
 
 export default function MobileResearchContent({
@@ -43,7 +45,9 @@ export default function MobileResearchContent({
   workflowMode = "exam",
   examPaper,
   reviewingQuestionIds = [],
+  applyingTeacherFeedback = false,
   onReviewExamQuestion,
+  onApplyTeacherFeedback,
 }: MobileResearchContentProps) {
   // Access research history context for saving chat messages
   const { 
@@ -269,8 +273,11 @@ export default function MobileResearchContent({
           <div className="mb-3">
             <ExamReviewPanel
               paper={examPaper}
+              variant="embedded"
               loadingQuestionIds={reviewingQuestionIds}
+              teacherFeedbackLoading={applyingTeacherFeedback}
               onReviewAction={onReviewExamQuestion}
+              onApplyTeacherFeedback={onApplyTeacherFeedback}
             />
           </div>
         ) : null}

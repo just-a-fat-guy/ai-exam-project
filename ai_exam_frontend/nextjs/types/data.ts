@@ -103,6 +103,15 @@ export interface ChatMessage {
   metadata?: any; // For storing search results and other contextual information
 }
 
+export interface ConversationThreadItem {
+  id: string;
+  role: "user" | "assistant" | "system";
+  kind: "message" | "exam_preview" | "status";
+  content: string;
+  timestamp?: number;
+  metadata?: any;
+}
+
 export interface ResearchHistoryItem {
   id: string;
   question: string;

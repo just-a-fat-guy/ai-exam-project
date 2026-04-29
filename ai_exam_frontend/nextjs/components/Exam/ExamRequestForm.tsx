@@ -33,9 +33,9 @@ const schoolStageOptions = [
 ];
 
 const generationModeOptions = [
+  { value: "ai_generate_only", label: "仅 AI 出题" },
   { value: "hybrid", label: "混合组卷" },
   { value: "question_bank_only", label: "仅题库抽题" },
-  { value: "ai_generate_only", label: "仅 AI 出题" },
 ];
 
 const questionTypeOptions: Array<{ value: QuestionType; label: string }> = [

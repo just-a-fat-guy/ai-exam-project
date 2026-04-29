@@ -58,6 +58,14 @@ export interface ExamRequestDraft {
   sections: ExamSectionDraft[];
 }
 
+export interface ExamNaturalLanguageRequestPayload {
+  user_request: string;
+  generation_mode: GenerationMode;
+  include_answers: boolean;
+  include_explanations: boolean;
+  output_formats: string[];
+}
+
 export interface ExamPaperValidatePayload {
   paper_title: string;
   subject: string;
@@ -123,6 +131,15 @@ export interface ExamValidationIssue {
   code: string;
   message: string;
   path: string;
+}
+
+export interface ExamNaturalLanguageParseResult {
+  valid: boolean;
+  task_summary: string;
+  assumptions: string[];
+  extracted: Record<string, unknown>;
+  exam_request: ExamPaperValidatePayload | null;
+  errors: ExamValidationIssue[];
 }
 
 export interface ExamQualityIssue {
@@ -233,6 +250,7 @@ export interface ExamPreviewData {
     document_ids: string[];
     tags: string[];
   };
+  request_snapshot?: ExamPaperValidatePayload | null;
   knowledge_points: Array<{
     name: string;
     required: boolean;
@@ -377,6 +395,9 @@ export interface ExamDraftData {
     reviewed_count: number;
     rejected_count: number;
   };
+  revision_round: number;
+  paper_level_guidance: string[];
+  feedback_history: ExamTeacherFeedbackMemoryRecord[];
   warnings: ExamValidationIssue[];
 }
 
@@ -384,6 +405,37 @@ export interface ExamDraftResult {
   valid: boolean;
   validation: ExamValidationResult;
   paper: ExamDraftData | null;
+}
+
+export interface ExamGenerationTaskEvent {
+  event_id: string;
+  timestamp: string;
+  level: "info" | "warning" | "error" | "success";
+  stage: string;
+  message: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ExamGenerationTaskProgress {
+  total_slots: number;
+  completed_slots: number;
+  generated_slots: number;
+  template_slots: number;
+  pending_regeneration_slots: number;
+  latest_message?: string | null;
+}
+
+export interface ExamGenerationTaskSnapshot {
+  task_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  task_summary: string;
+  created_at: string;
+  updated_at: string;
+  progress: ExamGenerationTaskProgress;
+  events: ExamGenerationTaskEvent[];
+  validation: ExamValidationResult;
+  paper: ExamDraftData | null;
+  error?: string | null;
 }
 
 export interface ExamQuestionReviewActionPayload {
@@ -404,5 +456,43 @@ export interface ExamPaperReviewResult {
   errors: ExamQualityIssue[];
   warnings: ExamQualityIssue[];
   applied_action_count: number;
+  paper: ExamDraftData | null;
+}
+
+export interface ExamTeacherFeedbackRequestPayload {
+  paper: ExamDraftData;
+  teacher_feedback: string;
+  reviewer?: string;
+  max_actions?: number;
+}
+
+export interface ExamTeacherFeedbackPlannedAction {
+  question_id: string;
+  action: "approve" | "reject" | "request_regeneration";
+  comment?: string | null;
+}
+
+export interface ExamTeacherFeedbackMemoryRecord {
+  reviewer: string;
+  teacher_feedback: string;
+  strategy: "no_change" | "question_level_edit" | "section_level_regenerate" | "paper_level_regenerate";
+  summary: string;
+  target_sections: string[];
+  target_question_ids: string[];
+  paper_level_guidance: string[];
+  planned_actions: ExamTeacherFeedbackPlannedAction[];
+  timestamp: string;
+}
+
+export interface ExamTeacherFeedbackResult {
+  valid: boolean;
+  summary: string;
+  strategy: "no_change" | "question_level_edit" | "section_level_regenerate" | "paper_level_regenerate";
+  target_sections: string[];
+  target_question_ids: string[];
+  paper_level_guidance: string[];
+  planned_actions: ExamTeacherFeedbackPlannedAction[];
+  errors: ExamQualityIssue[];
+  warnings: ExamQualityIssue[];
   paper: ExamDraftData | null;
 }

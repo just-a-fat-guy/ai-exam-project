@@ -18,6 +18,8 @@ interface MobileLayoutProps {
   mainContentRef?: React.RefObject<HTMLDivElement>;
   toastOptions?: Record<string, any>;
   toggleSidebar?: () => void;
+  hideResultAction?: boolean;
+  shiftHeaderForSidebar?: boolean;
 }
 
 export default function MobileLayout({
@@ -74,13 +76,13 @@ export default function MobileLayout({
           <div className="flex items-center">
             <a href="/" className="flex items-center">
               <img
-                src="/img/gptr-logo.png"
+                src="/img/ai-exam-icon.svg"
                 alt="GPT Researcher"
                 width={30}
                 height={30}
                 className="rounded-md mr-2"
               />
-              <span className="font-medium text-gray-200 text-sm">GPT Researcher</span>
+              <span className="font-medium text-gray-200 text-sm">AI 智能组卷</span>
             </a>
           </div>
           
@@ -102,7 +104,7 @@ export default function MobileLayout({
               <button
                 onClick={onNewResearch}
                 className="p-2 rounded-full bg-sky-500/20 text-sky-300 hover:bg-sky-500/30"
-                aria-label="发起新研究"
+                aria-label="发起新对话"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -149,7 +151,7 @@ export default function MobileLayout({
         {showHistory && (
           <div className="px-4 py-3 bg-gray-800/90 border-t border-gray-700/50 animate-slide-down shadow-lg max-h-[70vh] overflow-y-auto custom-scrollbar">
             <div className="mb-3 flex justify-between items-center">
-              <h3 className="text-sm font-medium text-gray-200">研究历史</h3>
+              <h3 className="text-sm font-medium text-gray-200">对话历史</h3>
               <button 
                 onClick={() => setShowHistory(false)}
                 className="text-gray-400 hover:text-gray-300"
@@ -187,12 +189,12 @@ export default function MobileLayout({
                     <polyline points="12 6 12 12 16 14"></polyline>
                   </svg>
                 </div>
-                <p className="text-sm text-gray-400">暂时还没有研究记录</p>
+                <p className="text-sm text-gray-400">暂时还没有对话记录</p>
                 <button 
                   onClick={onNewResearch} 
                   className="mt-3 px-4 py-2 text-xs text-teal-300 bg-teal-900/30 hover:bg-teal-800/40 rounded-md transition-colors"
                 >
-                  发起新研究
+                  发起新对话
                 </button>
               </div>
             )}
@@ -203,7 +205,7 @@ export default function MobileLayout({
                   href="/history" 
                   className="text-xs text-teal-400 hover:text-teal-300 transition-colors"
                 >
-                  查看全部研究历史
+                  查看全部对话历史
                 </a>
               </div>
             )}

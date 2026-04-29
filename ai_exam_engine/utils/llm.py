@@ -99,6 +99,9 @@ async def create_chat_completion(
         - 非流式场景下，默认最多重试 10 次
         - 如果 provider 返回空文本，也视为失败并进入重试逻辑
     """
+    max_attempts_override = kwargs.pop("max_attempts", None)
+    retry_delay_cap = kwargs.pop("retry_delay_cap", 8)
+
     # validate input
     if model is None:
         raise ValueError("Model cannot be None")
@@ -138,6 +141,15 @@ async def create_chat_completion(
     # 如果重试，很容易让前端重复收到半截内容，体验和状态都不好维护。
     # 非流式则可以更积极地重试。
     max_attempts = 1 if (stream and websocket is not None) else 10
+    if max_attempts_override is not None:
+        try:
+            max_attempts = max(1, int(max_attempts_override))
+        except (TypeError, ValueError):
+            logging.getLogger(__name__).warning(
+                "Invalid max_attempts override %r, falling back to %s",
+                max_attempts_override,
+                max_attempts,
+            )
     last_exception: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -152,7 +164,7 @@ async def create_chat_completion(
             )
             if attempt < max_attempts:
                 # 指数退避，避免短时间内把失败请求打满。
-                await asyncio.sleep(min(2 ** (attempt - 1), 8))
+                await asyncio.sleep(min(2 ** (attempt - 1), retry_delay_cap))
                 continue
             break
 
@@ -163,7 +175,7 @@ async def create_chat_completion(
                 f"LLM returned empty response (attempt {attempt}/{max_attempts})"
             )
             if attempt < max_attempts:
-                await asyncio.sleep(min(2 ** (attempt - 1), 8))
+                await asyncio.sleep(min(2 ** (attempt - 1), retry_delay_cap))
                 continue
             break
 
